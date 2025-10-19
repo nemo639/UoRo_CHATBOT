@@ -201,9 +201,9 @@ class Seq2SeqTransformer(nn.Module):
 def download_from_huggingface(repo_id, filename, cache_dir="./models"):
     try:
         from huggingface_hub import hf_hub_download
-       # st.info(f"📥 Downloading {filename} from Hugging Face...")
+      
         file_path = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=cache_dir, force_download=False)
-        # st.success(f"✅ Downloaded: {filename}")
+       
         return file_path
     except ImportError:
         st.error("❌ huggingface_hub not installed. Install with: pip install huggingface_hub")
@@ -284,8 +284,7 @@ def load_model_and_tokenizer(model_source, model_path, tokenizer_path, device, h
         ckpt = torch.load(str(model_file), map_location=device, weights_only=False)
         if 'config' in ckpt:
             cfg = ckpt['config']
-            st.info(f"📋 Config: d_model={cfg.get('d_model')}, nhead={cfg.get('nhead')}, "
-                    f"enc_layers={cfg.get('enc_layers')}, dec_layers={cfg.get('dec_layers')}")
+            
         else:
             cfg = {'d_model':512,'nhead':2,'enc_layers':2,'dec_layers':2,'ff':2048,'dropout':0.1}
             st.warning("⚠️ Using default config (no config found in checkpoint)")
@@ -429,7 +428,6 @@ if error:
     st.info("Check file paths / HF repo / install `huggingface_hub` if needed.")
     st.stop()
 
-st.info(f"Using tokens → PAD:{st.session_state.PAD_ID} • BOS:{st.session_state.BOS_ID} • EOS:{st.session_state.EOS_ID}")
 
 # ============================================================
 # CHAT HISTORY RENDER
