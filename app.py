@@ -478,14 +478,11 @@ with st.sidebar:
         
         st.info("""
         **Setup Instructions:**
-        1. Create HF account at huggingface.co
+        1. Create HF account.
         2. Create new model repository
         3. Upload your files:
            ```bash
-           pip install huggingface_hub
-           huggingface-cli login
-           huggingface-cli upload username/repo-name best_bleu_urdu_chatbot.pt
-           huggingface-cli upload username/repo-name urdu.model
+           
            ```
         """)
         
