@@ -472,7 +472,7 @@ with st.sidebar:
         st.markdown("##### 🤗 Hugging Face Settings")
         hf_repo_id = st.text_input(
             "Repository ID",
-            value="your-username/urdu-chatbot",
+            value="naeaeaem/urdu-chatbot",
             help="Format: username/repo-name"
         )
         
@@ -489,6 +489,7 @@ with st.sidebar:
            ```
         """)
         
+        
         model_path = "best_bleu_urdu_chatbot.pt"
         tokenizer_path = "spm/urdu.model"
         
@@ -496,11 +497,11 @@ with st.sidebar:
         hf_repo_id = None
         model_path = st.text_input(
             "Model Path (.pt)",
-            value="best_bleu_urdu_chatbot.pt"
+            value="naeaeaem/urdu-chatbot"
         )
         tokenizer_path = st.text_input(
             "Tokenizer Path (.model)",
-            value="spm/urdu.model"
+            value="naeaeaem/urdu-chatbot"
         )
     
     device = st.selectbox(
