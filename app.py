@@ -14,7 +14,28 @@ import re
 from pathlib import Path
 from typing import List, Tuple
 import unicodedata
+import subprocess
+import os
 
+# Add this right after imports, before st.set_page_config()
+def ensure_lfs_files():
+    """Download Git LFS files if not already present"""
+    lfs_files = ['best_bleu_urdu_chatbot.pt', 'spm/urdu.model']
+    
+    for file in lfs_files:
+        if os.path.exists(file):
+            # Check if it's a pointer file (< 1KB = likely a pointer)
+            if os.path.getsize(file) < 1024:
+                st.warning(f"⬇️ Downloading LFS file: {file}")
+                try:
+                    subprocess.run(['git', 'lfs', 'pull', '--include', file], check=True)
+                except Exception as e:
+                    st.error(f"Failed to download {file}: {e}")
+        else:
+            st.error(f"File not found: {file}")
+
+# Call this before loading model
+ensure_lfs_files()
 # ============================================================
 # PAGE CONFIGURATION
 # ============================================================
