@@ -1,6 +1,7 @@
 """
 Urdu Conversational Chatbot - Streamlit Interface
 Transformer Encoder-Decoder Architecture
+With Git LFS Auto-Download
 """
 
 import streamlit as st
@@ -17,25 +18,66 @@ import unicodedata
 import subprocess
 import os
 
-# Add this right after imports, before st.set_page_config()
+# ============================================================
+# GIT LFS FILE HANDLER
+# ============================================================
 def ensure_lfs_files():
-    """Download Git LFS files if not already present"""
-    lfs_files = ['best_bleu_urdu_chatbot.pt', 'spm/urdu.model']
+    """
+    Automatically download Git LFS files if they are pointer files
+    """
+    lfs_files = {
+        'best_bleu_urdu_chatbot.pt': 'Model file',
+        'spm/urdu.model': 'Tokenizer file'
+    }
     
-    for file in lfs_files:
-        if os.path.exists(file):
-            # Check if it's a pointer file (< 1KB = likely a pointer)
-            if os.path.getsize(file) < 1024:
-                st.warning(f"⬇️ Downloading LFS file: {file}")
+    for filepath, description in lfs_files.items():
+        if os.path.exists(filepath):
+            file_size = os.path.getsize(filepath)
+            
+            # Check if it's a Git LFS pointer file (< 1KB = likely pointer)
+            if file_size < 1024:
+                st.warning(f"⬇️ Detected LFS pointer for {description}. Downloading actual file...")
                 try:
-                    subprocess.run(['git', 'lfs', 'pull', '--include', file], check=True)
+                    # Try to pull the specific file
+                    result = subprocess.run(
+                        ['git', 'lfs', 'pull', '--include', filepath],
+                        capture_output=True,
+                        text=True,
+                        timeout=300  # 5 minute timeout
+                    )
+                    
+                    if result.returncode == 0:
+                        st.success(f"✅ Downloaded {description}: {filepath}")
+                    else:
+                        st.error(f"❌ Failed to download {filepath}: {result.stderr}")
+                        st.info("Trying alternative method...")
+                        
+                        # Alternative: Pull all LFS files
+                        subprocess.run(['git', 'lfs', 'pull'], timeout=300)
+                        
+                except subprocess.TimeoutExpired:
+                    st.error(f"⏱️ Timeout downloading {filepath}")
+                except FileNotFoundError:
+                    st.error("❌ Git LFS not installed!")
+                    st.info("""
+                    **Please install Git LFS:**
+                    - Ubuntu/Debian: `sudo apt-get install git-lfs`
+                    - macOS: `brew install git-lfs`
+                    - Windows: Download from https://git-lfs.github.com/
+                    
+                    Then run: `git lfs install && git lfs pull`
+                    """)
                 except Exception as e:
-                    st.error(f"Failed to download {file}: {e}")
+                    st.error(f"❌ Error downloading {filepath}: {str(e)}")
+            else:
+                st.info(f"✅ {description} already downloaded ({file_size / (1024*1024):.2f} MB)")
         else:
-            st.error(f"File not found: {file}")
+            st.error(f"❌ File not found: {filepath}")
+            st.info("Make sure you've cloned the repository with: `git clone <repo-url>`")
 
-# Call this before loading model
+# Call this at the start
 ensure_lfs_files()
+
 # ============================================================
 # PAGE CONFIGURATION
 # ============================================================
@@ -424,17 +466,16 @@ def load_model_and_tokenizer(model_path, tokenizer_path, device):
                 drop=config.get('dropout', 0.1)
             )
         else:
-            # IMPORTANT: Use YOUR actual training configuration!
-            # Check your training code Cell 9 for exact values
+            # Use default configuration
             st.warning("⚠️ No config found in checkpoint. Using default values.")
-            st.warning("🔧 If model fails to load, check training config in Cell 9!")
+            st.warning("🔧 If model fails to load, check training config!")
             
             model = Seq2SeqTransformer(
                 vocab=vocab_size,
                 d_model=512,
-                nhead=2,  # ← CHANGED: Your training used nhead=2!
-                enc_layers=2,  # ← CHANGED: Your training used 2 layers!
-                dec_layers=2,  # ← CHANGED: Your training used 2 layers!
+                nhead=2,  # Adjust to match your training
+                enc_layers=2,  # Adjust to match your training
+                dec_layers=2,  # Adjust to match your training
                 ff=2048,
                 drop=0.1
             )
@@ -477,6 +518,20 @@ with st.sidebar:
         help="Path to your SentencePiece tokenizer"
     )
     
+    # Manual LFS pull button
+    if st.button("🔄 Force Download LFS Files", use_container_width=True):
+        with st.spinner("Downloading LFS files..."):
+            try:
+                result = subprocess.run(['git', 'lfs', 'pull'], 
+                                      capture_output=True, text=True, timeout=300)
+                if result.returncode == 0:
+                    st.success("✅ LFS files downloaded!")
+                    st.rerun()
+                else:
+                    st.error(f"Error: {result.stderr}")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+    
     # Device selection
     device = st.selectbox(
         "Device",
@@ -486,7 +541,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Special Token Configuration (NEW!)
+    # Special Token Configuration
     st.markdown("#### 🔧 Special Tokens")
     with st.expander("Token IDs (Advanced)"):
         PAD = st.number_input("PAD Token ID", value=0, step=1)
@@ -524,7 +579,7 @@ with st.sidebar:
         help="Maximum tokens to generate"
     )
     
-    # Text normalization toggle (NEW!)
+    # Text normalization toggle
     normalize_input = st.checkbox(
         "Normalize Input Text",
         value=True,
@@ -590,10 +645,20 @@ with st.spinner("🔄 Loading model and tokenizer..."):
 if error:
     st.error(f"❌ Error loading model: {error}")
     st.info("""
-    **Instructions:**
-    1. Make sure your model file (.pt) is in the correct path
-    2. Verify tokenizer file (.model) exists
-    3. Check file paths in the sidebar
+    **Troubleshooting:**
+    1. Click "🔄 Force Download LFS Files" in the sidebar
+    2. Or manually run: `git lfs pull`
+    3. Verify files exist and are not pointer files
+    4. Check file sizes (model should be > 1MB)
+    
+    **To check if files are LFS pointers:**
+    ```bash
+    file best_bleu_urdu_chatbot.pt
+    # Should show: data (not ASCII text)
+    
+    ls -lh best_bleu_urdu_chatbot.pt
+    # Should show file size > 1MB
+    ```
     """)
     st.stop()
 
@@ -657,14 +722,16 @@ if send_button and user_input.strip():
                 response = greedy_decode(
                     model, sp, user_input,
                     max_len=max_length,
-                    device=device
+                    device=device,
+                    PAD=PAD, BOS=BOS, EOS=EOS
                 )
             else:
                 response = beam_search_decode(
                     model, sp, user_input,
                     beam_width=beam_width,
                     max_len=max_length,
-                    device=device
+                    device=device,
+                    PAD=PAD, BOS=BOS, EOS=EOS
                 )
             
             # Add to history
@@ -682,5 +749,6 @@ st.markdown("""
 <div style="text-align: center; color: #666; font-size: 12px;">
     <p>🚀 Transformer Encoder-Decoder Architecture | Built with PyTorch & Streamlit</p>
     <p>📚 Trained on Urdu conversational data with SentencePiece tokenization</p>
+    <p>🔄 Auto-downloads Git LFS files on startup</p>
 </div>
 """, unsafe_allow_html=True)
