@@ -612,18 +612,18 @@ with chat_container:
 # ================== INPUT (same layout, single-click send) ==================
 st.markdown("### ✍️ پیغام لکھیں | Write Message")
 
-# init session keys once
+# init once
 if "user_input" not in st.session_state:
     st.session_state.user_input = ""
-if "do_send" not in st.session_state:
-    st.session_state.do_send = False
+if "last_sent" not in st.session_state:
+    st.session_state.last_sent = None
 
 col1, col2 = st.columns([5, 1])
 
 with col1:
-    user_input = st.text_area(
+    st.text_area(
         "Your message",
-        key="user_input",                 # <- keep value in session state
+        key="user_input",                 # keep value in session state
         height=100,
         placeholder="یہاں اردو میں ٹائپ کریں...",
         label_visibility="collapsed"
@@ -632,38 +632,32 @@ with col1:
 with col2:
     st.markdown("<br>", unsafe_allow_html=True)
     if st.button("📤 Send", key="send_btn", use_container_width=True, type="primary"):
-        # mark intent to send and rerun once; avoids double-input problem
-        st.session_state.do_send = True
-        st.rerun()
+        text = (st.session_state.user_input or "").strip()
 
-# process exactly once after rerun
-if st.session_state.do_send:
-    st.session_state.do_send = False
-    text = (st.session_state.user_input or "").strip()
-    if text:
-        with st.spinner("🤔 جواب تیار ہو رہا ہے..."):
-            try:
-                if decode_strategy == "Greedy":
-                    response = greedy_decode(
-                        model, sp, text, max_len=max_length, device=device
-                    )
-                else:
-                    response = beam_search_decode(
-                        model, sp, text, beam_width=beam_width,
-                        max_len=max_length, device=device
-                    )
+        # Optional dedup: ignore if identical to last message
+        if text and (st.session_state.last_sent != text):
+            with st.spinner("🤔 جواب تیار ہو رہا ہے..."):
+                try:
+                    if decode_strategy == "Greedy":
+                        response = greedy_decode(
+                            model, sp, text, max_len=max_length, device=device
+                        )
+                    else:
+                        response = beam_search_decode(
+                            model, sp, text, beam_width=beam_width,
+                            max_len=max_length, device=device
+                        )
 
-                # Optional: dedup guard
-                last = st.session_state.chat_history[-1] if st.session_state.chat_history else None
-                if not last or last[0] != text:
                     st.session_state.chat_history.append((text, response))
                     st.session_state.message_count += 2
+                    st.session_state.last_sent = text
+                except Exception as e:
+                    st.error(f"❌ Error: {str(e)}")
 
-                # clear the textarea and show updated chat
-                st.session_state.user_input = ""
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+        # clear BEFORE rerun so the value isn’t re-sent
+        st.session_state.user_input = ""
+        st.rerun()
+
 
 
 
