@@ -485,13 +485,13 @@ with st.sidebar:
            pip install huggingface_hub
            huggingface-cli login
            huggingface-cli upload username/repo-name best_bleu_urdu_chatbot.pt
-           huggingface-cli upload username/repo-name spm/urdu.model
+           huggingface-cli upload username/repo-name urdu.model
            ```
         """)
         
         
         model_path = "best_bleu_urdu_chatbot.pt"
-        tokenizer_path = "spm/urdu.model"
+        tokenizer_path = "urdu.model"
         
     else:
         hf_repo_id = None
