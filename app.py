@@ -609,46 +609,44 @@ with chat_container:
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Input
+# ================== INPUT (dedup + single-submit) ==================
 st.markdown("### ✍️ پیغام لکھیں | Write Message")
 
-col1, col2 = st.columns([5, 1])
-
-with col1:
+with st.form("chat_form", clear_on_submit=True):
     user_input = st.text_area(
         "Your message",
+        key="user_input",
         height=100,
         placeholder="یہاں اردو میں ٹائپ کریں...",
         label_visibility="collapsed"
     )
+    submitted = st.form_submit_button("📤 Send", use_container_width=True)
 
-with col2:
-    st.markdown("<br>", unsafe_allow_html=True)
-    send_button = st.button("📤 Send", use_container_width=True, type="primary")
+if submitted:
+    text = (user_input or "").strip()
+    if text:
+        with st.spinner("🤔 جواب تیار ہو رہا ہے..."):
+            try:
+                if decode_strategy == "Greedy":
+                    response = greedy_decode(
+                        model, sp, text, max_len=max_length, device=device
+                    )
+                else:
+                    response = beam_search_decode(
+                        model, sp, text, beam_width=beam_width,
+                        max_len=max_length, device=device
+                    )
 
-if send_button and user_input.strip():
-    with st.spinner("🤔 جواب تیار ہو رہا ہے..."):
-        try:
-            if decode_strategy == "Greedy":
-                response = greedy_decode(
-                    model, sp, user_input,
-                    max_len=max_length,
-                    device=device
-                )
-            else:
-                response = beam_search_decode(
-                    model, sp, user_input,
-                    beam_width=beam_width,
-                    max_len=max_length,
-                    device=device
-                )
-            
-            st.session_state.chat_history.append((user_input, response))
-            st.session_state.message_count += 2
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+                # Optional: quick dedup guard against accidental double-submit
+                last = st.session_state.chat_history[-1] if st.session_state.chat_history else None
+                if not last or last[0] != text:
+                    st.session_state.chat_history.append((text, response))
+                    st.session_state.message_count += 2
+
+                # No st.rerun() needed; form submit already reruns and clear_on_submit=True empties the box.
+            except Exception as e:
+                st.error(f"❌ Error: {str(e)}")
+
 
 # Footer
 st.markdown("---")
