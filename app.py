@@ -1,6 +1,7 @@
 """
 Urdu Conversational Chatbot - Streamlit Interface
 Transformer Encoder-Decoder Architecture
+Optimized for Hugging Face Spaces Deployment
 """
 
 import streamlit as st
@@ -11,6 +12,7 @@ import sentencepiece as spm
 import math
 import json
 import re
+import os
 from pathlib import Path
 from typing import List, Tuple
 import unicodedata
@@ -30,10 +32,8 @@ st.set_page_config(
 # ============================================================
 st.markdown("""
 <style>
-    /* Import Urdu fonts */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
     
-    /* RTL Support */
     .rtl {
         direction: rtl;
         text-align: right;
@@ -42,7 +42,6 @@ st.markdown("""
         unicode-bidi: plaintext;
     }
     
-    /* Chat Messages */
     .user-message {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -89,7 +88,6 @@ st.markdown("""
         margin-bottom: 20px;
     }
     
-    /* Scrollbar styling */
     .chat-container::-webkit-scrollbar {
         width: 8px;
     }
@@ -108,7 +106,6 @@ st.markdown("""
         background: #555;
     }
     
-    /* Header styling */
     .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -118,15 +115,6 @@ st.markdown("""
         margin-bottom: 20px;
     }
     
-    /* Sidebar styling */
-    .sidebar-content {
-        background: #f8f9fa;
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 15px;
-    }
-    
-    /* Button styling */
     .stButton>button {
         width: 100%;
         border-radius: 8px;
@@ -139,22 +127,12 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
     
-    /* Input styling */
     .stTextArea textarea {
         font-family: 'Noto Nastaliq Urdu', serif;
         direction: rtl;
         text-align: right;
         font-size: 16px;
         line-height: 1.8;
-    }
-    
-    /* Metrics */
-    .metric-card {
-        background: white;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        margin: 10px 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -268,6 +246,34 @@ class Seq2SeqTransformer(nn.Module):
         return self.fc_out(out)
 
 # ============================================================
+# HUGGING FACE MODEL DOWNLOADER
+# ============================================================
+@st.cache_resource
+def download_from_huggingface(repo_id, filename, cache_dir="./models"):
+    """Download model from Hugging Face Hub"""
+    try:
+        from huggingface_hub import hf_hub_download
+        
+        st.info(f"📥 Downloading {filename} from Hugging Face...")
+        
+        file_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            cache_dir=cache_dir,
+            force_download=False
+        )
+        
+        st.success(f"✅ Downloaded: {filename}")
+        return file_path
+        
+    except ImportError:
+        st.error("❌ huggingface_hub not installed. Install with: pip install huggingface_hub")
+        return None
+    except Exception as e:
+        st.error(f"❌ Download failed: {str(e)}")
+        return None
+
+# ============================================================
 # DECODING FUNCTIONS
 # ============================================================
 @torch.no_grad()
@@ -276,7 +282,6 @@ def greedy_decode(model, sp, text, max_len=64, device='cpu',
     """Greedy decoding for fast inference"""
     model.eval()
     
-    # Encode input
     src_tokens = sp.encode(normalize_urdu(text), out_type=int)
     if len(src_tokens) > 94:
         src_tokens = src_tokens[:94]
@@ -285,10 +290,8 @@ def greedy_decode(model, sp, text, max_len=64, device='cpu',
                           dtype=torch.long, device=device)
     src_kpm = (src_ids == PAD)
     
-    # Start with BOS token
     ys = torch.tensor([[BOS]], dtype=torch.long, device=device)
     
-    # Generate tokens
     for _ in range(max_len):
         T = ys.size(1)
         causal = torch.triu(torch.ones(T, T, dtype=torch.bool, 
@@ -300,7 +303,6 @@ def greedy_decode(model, sp, text, max_len=64, device='cpu',
         if next_id.item() == EOS:
             break
     
-    # Decode output
     out = ys[0, 1:]
     if (out == EOS).any():
         eos_idx = (out == EOS).nonzero(as_tuple=True)[0][0]
@@ -315,7 +317,6 @@ def beam_search_decode(model, sp, text, beam_width=4, max_len=64,
     """Beam search decoding for better quality"""
     model.eval()
     
-    # Encode input
     src_tokens = sp.encode(normalize_urdu(text), out_type=int)
     if len(src_tokens) > 94:
         src_tokens = src_tokens[:94]
@@ -324,7 +325,6 @@ def beam_search_decode(model, sp, text, beam_width=4, max_len=64,
                           dtype=torch.long, device=device)
     src_kpm = (src_ids == PAD)
     
-    # Initialize beams
     beams = [(0.0, torch.tensor([[BOS]], device=device))]
     completed_beams = []
     
@@ -356,14 +356,12 @@ def beam_search_decode(model, sp, text, beam_width=4, max_len=64,
         if len(beams) == 0:
             break
     
-    # Add remaining beams
     for score, seq in beams:
         completed_beams.append((score / len(seq[0]), seq))
     
     if not completed_beams:
         return ""
     
-    # Get best sequence
     best_seq = max(completed_beams, key=lambda x: x[0])[1][0, 1:]
     
     if (best_seq == EOS).any():
@@ -376,145 +374,155 @@ def beam_search_decode(model, sp, text, beam_width=4, max_len=64,
 # LOAD MODEL AND TOKENIZER
 # ============================================================
 @st.cache_resource
-def load_model_and_tokenizer(model_path, tokenizer_path, device):
-    """Load model and tokenizer (cached)"""
+def load_model_and_tokenizer(model_source, model_path, tokenizer_path, 
+                            device, hf_repo_id=None):
+    """Load model and tokenizer with multiple source options"""
     try:
+        # Handle Hugging Face download
+        if model_source == "Hugging Face" and hf_repo_id:
+            model_path = download_from_huggingface(
+                repo_id=hf_repo_id,
+                filename=os.path.basename(model_path)
+            )
+            tokenizer_path = download_from_huggingface(
+                repo_id=hf_repo_id,
+                filename=tokenizer_path
+            )
+            
+            if not model_path or not tokenizer_path:
+                raise FileNotFoundError("Failed to download from Hugging Face")
+        
+        # Verify files exist
+        model_file = Path(model_path)
+        tokenizer_file = Path(tokenizer_path)
+        
+        if not model_file.exists():
+            raise FileNotFoundError(f"Model file not found: {model_path}")
+        if not tokenizer_file.exists():
+            raise FileNotFoundError(f"Tokenizer file not found: {tokenizer_path}")
+        
         # Load tokenizer
         sp = spm.SentencePieceProcessor()
-        sp.load(tokenizer_path)
+        sp.load(str(tokenizer_file))
+        vocab_size = sp.get_piece_size()
+        st.success(f"✅ Tokenizer loaded (vocab: {vocab_size})")
         
         # Load model checkpoint
-        checkpoint = torch.load(model_path, map_location=device)
+        checkpoint = torch.load(str(model_file), map_location=device, weights_only=False)
         
-        # Get vocab size
-        vocab_size = checkpoint.get('vocab_size', sp.get_piece_size())
-        
-        # Try to load config from checkpoint
+        # Get configuration
         if 'config' in checkpoint:
             config = checkpoint['config']
-            st.info(f"📋 Loaded model config: {config}")
-            model = Seq2SeqTransformer(
-                vocab=vocab_size,
-                d_model=config.get('d_model', 512),
-                nhead=config.get('nhead', 8),
-                enc_layers=config.get('enc_layers', 4),
-                dec_layers=config.get('dec_layers', 4),
-                ff=config.get('ff', 2048),
-                drop=config.get('dropout', 0.1)
-            )
+            st.info(f"📋 Config: d_model={config.get('d_model')}, nhead={config.get('nhead')}, layers={config.get('enc_layers')}")
         else:
-            # IMPORTANT: Use YOUR actual training configuration!
-            # Check your training code Cell 9 for exact values
-            st.warning("⚠️ No config found in checkpoint. Using default values.")
-            st.warning("🔧 If model fails to load, check training config in Cell 9!")
-            
-            model = Seq2SeqTransformer(
-                vocab=vocab_size,
-                d_model=512,
-                nhead=2,  # ← CHANGED: Your training used nhead=2!
-                enc_layers=2,  # ← CHANGED: Your training used 2 layers!
-                dec_layers=2,  # ← CHANGED: Your training used 2 layers!
-                ff=2048,
-                drop=0.1
-            )
+            config = {
+                'd_model': 512,
+                'nhead': 2,
+                'enc_layers': 2,
+                'dec_layers': 2,
+                'ff': 2048,
+                'dropout': 0.1
+            }
+            st.warning("⚠️ Using default config (adjust if needed)")
+        
+        # Create model
+        model = Seq2SeqTransformer(
+            vocab=checkpoint.get('vocab_size', vocab_size),
+            d_model=config.get('d_model', 512),
+            nhead=config.get('nhead', 2),
+            enc_layers=config.get('enc_layers', 2),
+            dec_layers=config.get('dec_layers', 2),
+            ff=config.get('ff', 2048),
+            drop=config.get('dropout', 0.1)
+        )
         
         # Load weights
         model.load_state_dict(checkpoint['model_state_dict'], strict=False)
         model.to(device)
         model.eval()
         
+        st.success(f"✅ Model loaded on {device.upper()}")
         return model, sp, None
+        
     except Exception as e:
         return None, None, str(e)
 
 # ============================================================
-# SESSION STATE INITIALIZATION
+# SESSION STATE
 # ============================================================
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
-
 if 'message_count' not in st.session_state:
     st.session_state.message_count = 0
 
 # ============================================================
-# SIDEBAR CONFIGURATION
+# SIDEBAR
 # ============================================================
 with st.sidebar:
     st.markdown("### ⚙️ ترتیبات | Settings")
     
-    # Model files
-    st.markdown("#### 📁 Model Files")
-    model_path = st.text_input(
-        "Model Path (.pt)",
-        value="best_bleu_urdu_chatbot.pt",
-        help="Path to your trained model checkpoint"
+    st.markdown("#### 📁 Model Source")
+    model_source = st.radio(
+        "Select Source",
+        ["Local Files", "Hugging Face"],
+        help="Choose where to load model from"
     )
     
-    tokenizer_path = st.text_input(
-        "Tokenizer Path (.model)",
-        value="spm/urdu.model",
-        help="Path to your SentencePiece tokenizer"
-    )
+    if model_source == "Hugging Face":
+        st.markdown("##### 🤗 Hugging Face Settings")
+        hf_repo_id = st.text_input(
+            "Repository ID",
+            value="your-username/urdu-chatbot",
+            help="Format: username/repo-name"
+        )
+        
+        st.info("""
+        **Setup Instructions:**
+        1. Create HF account at huggingface.co
+        2. Create new model repository
+        3. Upload your files:
+           ```bash
+           pip install huggingface_hub
+           huggingface-cli login
+           huggingface-cli upload username/repo-name best_bleu_urdu_chatbot.pt
+           huggingface-cli upload username/repo-name spm/urdu.model
+           ```
+        """)
+        
+        model_path = "best_bleu_urdu_chatbot.pt"
+        tokenizer_path = "spm/urdu.model"
+        
+    else:
+        hf_repo_id = None
+        model_path = st.text_input(
+            "Model Path (.pt)",
+            value="best_bleu_urdu_chatbot.pt"
+        )
+        tokenizer_path = st.text_input(
+            "Tokenizer Path (.model)",
+            value="spm/urdu.model"
+        )
     
-    # Device selection
     device = st.selectbox(
         "Device",
-        ["cuda" if torch.cuda.is_available() else "cpu", "cpu"],
-        help="Select computation device"
+        ["cuda" if torch.cuda.is_available() else "cpu", "cpu"]
     )
     
     st.markdown("---")
     
-    # Special Token Configuration (NEW!)
-    st.markdown("#### 🔧 Special Tokens")
-    with st.expander("Token IDs (Advanced)"):
-        PAD = st.number_input("PAD Token ID", value=0, step=1)
-        BOS = st.number_input("BOS Token ID", value=1, step=1)
-        EOS = st.number_input("EOS Token ID", value=2, step=1)
-        st.caption("⚠️ Must match training configuration!")
-    
-    st.markdown("---")
-    
-    # Decoding settings
-    st.markdown("#### 🎯 Decoding Strategy")
-    decode_strategy = st.radio(
-        "Strategy",
-        ["Greedy", "Beam Search"],
-        help="Greedy is faster, Beam Search gives better quality"
-    )
+    st.markdown("#### 🎯 Decoding")
+    decode_strategy = st.radio("Strategy", ["Greedy", "Beam Search"])
     
     if decode_strategy == "Beam Search":
-        beam_width = st.slider(
-            "Beam Width",
-            min_value=2,
-            max_value=10,
-            value=4,
-            help="Higher values = better quality but slower"
-        )
+        beam_width = st.slider("Beam Width", 2, 10, 4)
     else:
         beam_width = 1
     
-    max_length = st.slider(
-        "Max Length",
-        min_value=32,
-        max_value=128,
-        value=64,
-        step=8,
-        help="Maximum tokens to generate"
-    )
-    
-    # Text normalization toggle (NEW!)
-    normalize_input = st.checkbox(
-        "Normalize Input Text",
-        value=True,
-        help="Apply text normalization (must match training)"
-    )
+    max_length = st.slider("Max Length", 32, 128, 64, 8)
     
     st.markdown("---")
     
-    # Actions
     st.markdown("#### 🔧 Actions")
-    
     if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.chat_history = []
         st.session_state.message_count = 0
@@ -534,21 +542,15 @@ with st.sidebar:
                 mime="application/json",
                 use_container_width=True
             )
-        else:
-            st.warning("No chat history to export!")
     
     st.markdown("---")
-    
-    # Statistics
-    st.markdown("#### 📊 Statistics")
-    st.metric("Total Messages", st.session_state.message_count)
+    st.markdown("#### 📊 Stats")
+    st.metric("Messages", st.session_state.message_count)
     st.metric("Conversations", len(st.session_state.chat_history))
 
 # ============================================================
 # MAIN INTERFACE
 # ============================================================
-
-# Header
 st.markdown("""
 <div class="main-header">
     <h1 style="margin:0;">💬 اردو چیٹ بوٹ</h1>
@@ -559,26 +561,27 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Load model
-with st.spinner("🔄 Loading model and tokenizer..."):
+with st.spinner("🔄 Loading model..."):
     model, sp, error = load_model_and_tokenizer(
-        model_path, 
-        tokenizer_path, 
-        device
+        model_source=model_source,
+        model_path=model_path,
+        tokenizer_path=tokenizer_path,
+        device=device,
+        hf_repo_id=hf_repo_id
     )
 
 if error:
-    st.error(f"❌ Error loading model: {error}")
+    st.error(f"❌ Error: {error}")
     st.info("""
-    **Instructions:**
-    1. Make sure your model file (.pt) is in the correct path
-    2. Verify tokenizer file (.model) exists
-    3. Check file paths in the sidebar
+    **Troubleshooting:**
+    - Verify file paths are correct
+    - Check Hugging Face repo ID format
+    - Ensure files are uploaded to HF
+    - Install: `pip install huggingface_hub`
     """)
     st.stop()
 
-st.success(f"✅ Model loaded successfully on {device}")
-
-# Chat container
+# Chat interface
 st.markdown("### 💭 گفتگو | Conversation")
 
 chat_container = st.container()
@@ -590,7 +593,6 @@ with chat_container:
         st.info("👋 سلام! آپ کی مدد کے لیے حاضر ہوں۔ کچھ پوچھیں!")
     else:
         for user_msg, bot_msg in st.session_state.chat_history:
-            # User message
             st.markdown(f"""
             <div class="user-message rtl">
                 <div class="message-label">آپ:</div>
@@ -599,7 +601,6 @@ with chat_container:
             <div style="clear:both;"></div>
             """, unsafe_allow_html=True)
             
-            # Bot message
             st.markdown(f"""
             <div class="bot-message rtl">
                 <div class="message-label">بوٹ:</div>
@@ -610,14 +611,14 @@ with chat_container:
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Input area
+# Input
 st.markdown("### ✍️ پیغام لکھیں | Write Message")
 
 col1, col2 = st.columns([5, 1])
 
 with col1:
     user_input = st.text_area(
-        "Your message (اپنا پیغام)",
+        "Your message",
         height=100,
         placeholder="یہاں اردو میں ٹائپ کریں...",
         label_visibility="collapsed"
@@ -627,11 +628,9 @@ with col2:
     st.markdown("<br>", unsafe_allow_html=True)
     send_button = st.button("📤 Send", use_container_width=True, type="primary")
 
-# Process input
 if send_button and user_input.strip():
     with st.spinner("🤔 جواب تیار ہو رہا ہے..."):
         try:
-            # Generate response
             if decode_strategy == "Greedy":
                 response = greedy_decode(
                     model, sp, user_input,
@@ -646,20 +645,17 @@ if send_button and user_input.strip():
                     device=device
                 )
             
-            # Add to history
             st.session_state.chat_history.append((user_input, response))
             st.session_state.message_count += 2
-            
             st.rerun()
             
         except Exception as e:
-            st.error(f"❌ Error generating response: {str(e)}")
+            st.error(f"❌ Error: {str(e)}")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666; font-size: 12px;">
-    <p>🚀 Transformer Encoder-Decoder Architecture | Built with PyTorch & Streamlit</p>
-    <p>📚 Trained on Urdu conversational data with SentencePiece tokenization</p>
+    <p>🚀 Built with PyTorch & Streamlit | Optimized for Hugging Face Spaces</p>
 </div>
 """, unsafe_allow_html=True)
