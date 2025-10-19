@@ -82,7 +82,7 @@ st.markdown("""
         background: #f8f9fa;
         padding: 20px;
         border-radius: 15px;
-        min-height: 150px;
+        min-height: 0px;
         max-height: 600px;
         overflow-y: auto;
         margin-bottom: 20px;
