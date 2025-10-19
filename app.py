@@ -83,7 +83,7 @@ st.markdown("""
         background: #f8f9fa;
         padding: 20px;
         border-radius: 15px;
-        min-height: 150px;
+        min-height: 500px;
         max-height: 600px;
         overflow-y: auto;
         margin-bottom: 20px;
@@ -383,22 +383,43 @@ def load_model_and_tokenizer(model_path, tokenizer_path, device):
         sp = spm.SentencePieceProcessor()
         sp.load(tokenizer_path)
         
-        # Load model
+        # Load model checkpoint
         checkpoint = torch.load(model_path, map_location=device)
         
+        # Get vocab size
         vocab_size = checkpoint.get('vocab_size', sp.get_piece_size())
         
-        model = Seq2SeqTransformer(
-            vocab=vocab_size,
-            d_model=512,
-            nhead=8,
-            enc_layers=4,
-            dec_layers=4,
-            ff=2048,
-            drop=0.1
-        )
+        # Try to load config from checkpoint
+        if 'config' in checkpoint:
+            config = checkpoint['config']
+            st.info(f"📋 Loaded model config: {config}")
+            model = Seq2SeqTransformer(
+                vocab=vocab_size,
+                d_model=config.get('d_model', 512),
+                nhead=config.get('nhead', 8),
+                enc_layers=config.get('enc_layers', 4),
+                dec_layers=config.get('dec_layers', 4),
+                ff=config.get('ff', 2048),
+                drop=config.get('dropout', 0.1)
+            )
+        else:
+            # IMPORTANT: Use YOUR actual training configuration!
+            # Check your training code Cell 9 for exact values
+            st.warning("⚠️ No config found in checkpoint. Using default values.")
+            st.warning("🔧 If model fails to load, check training config in Cell 9!")
+            
+            model = Seq2SeqTransformer(
+                vocab=vocab_size,
+                d_model=512,
+                nhead=2,  # ← CHANGED: Your training used nhead=2!
+                enc_layers=2,  # ← CHANGED: Your training used 2 layers!
+                dec_layers=2,  # ← CHANGED: Your training used 2 layers!
+                ff=2048,
+                drop=0.1
+            )
         
-        model.load_state_dict(checkpoint['model_state_dict'])
+        # Load weights
+        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
         model.to(device)
         model.eval()
         
@@ -444,6 +465,16 @@ with st.sidebar:
     
     st.markdown("---")
     
+    # Special Token Configuration (NEW!)
+    st.markdown("#### 🔧 Special Tokens")
+    with st.expander("Token IDs (Advanced)"):
+        PAD = st.number_input("PAD Token ID", value=0, step=1)
+        BOS = st.number_input("BOS Token ID", value=1, step=1)
+        EOS = st.number_input("EOS Token ID", value=2, step=1)
+        st.caption("⚠️ Must match training configuration!")
+    
+    st.markdown("---")
+    
     # Decoding settings
     st.markdown("#### 🎯 Decoding Strategy")
     decode_strategy = st.radio(
@@ -470,6 +501,13 @@ with st.sidebar:
         value=64,
         step=8,
         help="Maximum tokens to generate"
+    )
+    
+    # Text normalization toggle (NEW!)
+    normalize_input = st.checkbox(
+        "Normalize Input Text",
+        value=True,
+        help="Apply text normalization (must match training)"
     )
     
     st.markdown("---")
