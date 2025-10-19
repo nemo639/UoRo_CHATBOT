@@ -279,7 +279,7 @@ def load_model_and_tokenizer(model_source, model_path, tokenizer_path, device, h
         if not tokenizer_file.exists(): raise FileNotFoundError(f"Tokenizer file not found: {tokenizer_path}")
 
         sp_proc = spm.SentencePieceProcessor(); sp_proc.load(str(tokenizer_file))
-        vocab_size = sp_proc.get_piece_size(); st.success(f"✅ Tokenizer loaded (vocab: {vocab_size})")
+        vocab_size = sp_proc.get_piece_size(); 
 
         ckpt = torch.load(str(model_file), map_location=device, weights_only=False)
         if 'config' in ckpt:
@@ -305,7 +305,7 @@ def load_model_and_tokenizer(model_source, model_path, tokenizer_path, device, h
             model.load_state_dict(ckpt, strict=False)
 
         model.to(device); model.eval()
-        st.success(f"✅ Model loaded on {str(device).upper()}")
+        
         return model, sp_proc, None
     except Exception as e:
         return None, None, str(e)
