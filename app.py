@@ -309,6 +309,7 @@ if 'message_count' not in st.session_state: st.session_state.message_count = 0
 st.session_state.setdefault("chat_input", "")          # textarea value
 st.session_state.setdefault("is_generating", False)    # debounce
 st.session_state.setdefault("last_pair", None)         # (user, bot)
+st.session_state.setdefault("_pending_clear", False)   # clear textbox on next run
 
 def _append_pair(u, b):
     if st.session_state.last_pair == (u, b):  # de-dupe identical consecutive pair
@@ -349,7 +350,7 @@ with st.sidebar:
     if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.chat_history = []; st.session_state.message_count = 0
         st.session_state.last_pair = None
-        st.experimental_rerun()  # legacy-compatible alias for st.rerun()
+        st.experimental_rerun()
 
     if st.button("💾 Export Chat", use_container_width=True):
         if st.session_state.chat_history:
@@ -416,6 +417,11 @@ with st.container():
 # ============================================================
 # INPUT (YOUR ORIGINAL LAYOUT: textarea + Send button)
 # ============================================================
+# Clear the textbox safely at the **start** of the run if flagged
+if st.session_state.get("_pending_clear"):
+    st.session_state["_pending_clear"] = False
+    st.session_state["chat_input"] = ""   # safe now (before creating the widget)
+
 st.markdown("### ✍️ پیغام لکھیں | Write Message")
 col1, col2 = st.columns([5, 1])
 
@@ -432,7 +438,7 @@ with col2:
     st.markdown("<br>", unsafe_allow_html=True)
     send_button = st.button("📤 Send", use_container_width=True, type="primary")
 
-# ---- Submit logic with debounce + de-dupe + manual clear ----
+# ---- Submit logic with debounce + de-dupe ----
 if send_button and not st.session_state.is_generating:
     txt = (st.session_state.chat_input or "").strip()
     if txt:
@@ -449,8 +455,8 @@ if send_button and not st.session_state.is_generating:
         except Exception as e:
             st.error(f"❌ Error: {e}")
         finally:
-            st.session_state.chat_input = ""      # ✅ clear textarea so reruns don't resend
             st.session_state.is_generating = False
+            st.session_state._pending_clear = True  # clear textbox on NEXT run
             st.rerun()
 
 # ============================================================
