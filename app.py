@@ -201,9 +201,9 @@ class Seq2SeqTransformer(nn.Module):
 def download_from_huggingface(repo_id, filename, cache_dir="./models"):
     try:
         from huggingface_hub import hf_hub_download
-        st.info(f"📥 Downloading {filename} from Hugging Face...")
+       # st.info(f"📥 Downloading {filename} from Hugging Face...")
         file_path = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=cache_dir, force_download=False)
-        st.success(f"✅ Downloaded: {filename}")
+        # st.success(f"✅ Downloaded: {filename}")
         return file_path
     except ImportError:
         st.error("❌ huggingface_hub not installed. Install with: pip install huggingface_hub")
