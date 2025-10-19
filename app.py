@@ -223,8 +223,8 @@ class PositionalEncoding(nn.Module):
 
 class Seq2SeqTransformer(nn.Module):
     """Transformer Encoder-Decoder for Urdu Chatbot"""
-    def __init__(self, vocab, d_model=512, nhead=8, enc_layers=4, 
-                 dec_layers=4, ff=2048, drop=0.1):
+    def __init__(self, vocab, d_model=512, nhead=2, enc_layers=2, 
+                 dec_layers=2, ff=2048, drop=0.1):
         super().__init__()
         
         self.tok_emb = nn.Embedding(vocab, d_model, padding_idx=0)
