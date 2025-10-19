@@ -387,18 +387,38 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("#### 🔧 Actions")
-    if st.button("🗑️ Clear Chat", use_container_width=True):
-        st.session_state.chat_history = []; st.session_state.message_count = 0
-        st.session_state.last_pair = None
-        st.experimental_rerun()
+    # --- Clear Chat (hard reset) ---
+if st.button("🗑️ Clear Chat", use_container_width=True, key="clear_chat"):
+    # remove keys instead of just assigning [] so they’re re-initialized cleanly
+    for k in ("chat_history", "message_count", "last_pair", "chat_input"):
+        if k in st.session_state:
+            del st.session_state[k]
+    # also clear any pending input reset flags/debounce
+    for k in ("_pending_clear", "is_generating"):
+        if k in st.session_state:
+            del st.session_state[k]
+    st.rerun()
 
-    if st.button("💾 Export Chat", use_container_width=True):
-        if st.session_state.chat_history:
-            chat_json = json.dumps(st.session_state.chat_history, ensure_ascii=False, indent=2)
-            st.download_button("Download JSON", data=chat_json, file_name="urdu_chat_history.json",
-                               mime="application/json", use_container_width=True)
-        else:
-            st.info("No messages to export yet.")
+    # --- Export Chat ---
+if "show_download" not in st.session_state:
+    st.session_state.show_download = False
+
+if st.button("💾 Export Chat", use_container_width=True, key="export_chat"):
+    if st.session_state.chat_history:
+        st.session_state.show_download = True
+    else:
+        st.info("No messages to export yet.")
+
+if st.session_state.show_download and st.session_state.chat_history:
+    chat_json = json.dumps(st.session_state.chat_history, ensure_ascii=False, indent=2)
+    st.download_button(
+        label="⬇️ Download Chat JSON",
+        data=chat_json.encode("utf-8"),
+        file_name="urdu_chat_history.json",
+        mime="application/json",
+        use_container_width=True,
+    )
+
 
     st.markdown("---")
     st.markdown("#### 📊 Stats")
