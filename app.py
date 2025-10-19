@@ -195,15 +195,15 @@ class Seq2SeqTransformer(nn.Module):
         return self.fc_out(out)
 
 # ============================================================
-# HUGGING FACE MODEL DOWNLOADER
+# HUGGING FACE MODEL DOWNLOADER (verbosity-aware)
 # ============================================================
 @st.cache_resource
-def download_from_huggingface(repo_id, filename, cache_dir="./models"):
+def download_from_huggingface(repo_id, filename, cache_dir="./models", verbose=False):
     try:
         from huggingface_hub import hf_hub_download
-      
+        if verbose: st.info(f"📥 Downloading {filename} from Hugging Face...")
         file_path = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=cache_dir, force_download=False)
-       
+        if verbose: st.success(f"✅ Downloaded: {filename}")
         return file_path
     except ImportError:
         st.error("❌ huggingface_hub not installed. Install with: pip install huggingface_hub")
@@ -263,14 +263,14 @@ def beam_search_decode(model, sp, text, beam_width=4, max_len=64, device='cpu', 
     return sp.decode(best.tolist())
 
 # ============================================================
-# LOAD MODEL AND TOKENIZER
+# LOAD MODEL AND TOKENIZER (verbosity-aware)
 # ============================================================
 @st.cache_resource
-def load_model_and_tokenizer(model_source, model_path, tokenizer_path, device, hf_repo_id=None):
+def load_model_and_tokenizer(model_source, model_path, tokenizer_path, device, hf_repo_id=None, verbose=False):
     try:
         if model_source == "Hugging Face" and hf_repo_id:
-            model_path = download_from_huggingface(hf_repo_id, os.path.basename(model_path))
-            tokenizer_path = download_from_huggingface(hf_repo_id, tokenizer_path)
+            model_path = download_from_huggingface(hf_repo_id, os.path.basename(model_path), verbose=verbose)
+            tokenizer_path = download_from_huggingface(hf_repo_id, tokenizer_path, verbose=verbose)
             if not model_path or not tokenizer_path:
                 raise FileNotFoundError("Failed to download from Hugging Face")
 
@@ -279,15 +279,18 @@ def load_model_and_tokenizer(model_source, model_path, tokenizer_path, device, h
         if not tokenizer_file.exists(): raise FileNotFoundError(f"Tokenizer file not found: {tokenizer_path}")
 
         sp_proc = spm.SentencePieceProcessor(); sp_proc.load(str(tokenizer_file))
-        vocab_size = sp_proc.get_piece_size(); 
+        vocab_size = sp_proc.get_piece_size()
+        if verbose: st.success(f"✅ Tokenizer loaded (vocab: {vocab_size})")
 
         ckpt = torch.load(str(model_file), map_location=device, weights_only=False)
         if 'config' in ckpt:
             cfg = ckpt['config']
-            
+            if verbose:
+                st.info(f"📋 Config: d_model={cfg.get('d_model')}, nhead={cfg.get('nhead')}, "
+                        f"enc_layers={cfg.get('enc_layers')}, dec_layers={cfg.get('dec_layers')}")
         else:
             cfg = {'d_model':512,'nhead':2,'enc_layers':2,'dec_layers':2,'ff':2048,'dropout':0.1}
-            st.warning("⚠️ Using default config (no config found in checkpoint)")
+            if verbose: st.warning("⚠️ Using default config (no config found in checkpoint)")
 
         model = Seq2SeqTransformer(
             vocab=ckpt.get('vocab_size', vocab_size),
@@ -305,7 +308,7 @@ def load_model_and_tokenizer(model_source, model_path, tokenizer_path, device, h
             model.load_state_dict(ckpt, strict=False)
 
         model.to(device); model.eval()
-        
+        if verbose: st.success(f"✅ Model loaded on {str(device).upper()}")
         return model, sp_proc, None
     except Exception as e:
         return None, None, str(e)
@@ -345,7 +348,6 @@ with st.sidebar:
     if model_source == "Hugging Face":
         st.markdown("##### 🤗 Hugging Face Settings")
         hf_repo_id = st.text_input("Repository ID", value="naeaeaem/urdu-chatbot", help="Format: username/repo-name")
-        st.info("Upload `best_bleu_urdu_chatbot.pt` and `urdu.model` to your HF repo (filenames must match).")
         model_path = "best_bleu_urdu_chatbot.pt"
         tokenizer_path = "urdu.model"
     else:
@@ -354,6 +356,10 @@ with st.sidebar:
         tokenizer_path = st.text_input("Tokenizer Path (.model)", value="urdu.model")
 
     device = st.selectbox("Device", ["cuda" if torch.cuda.is_available() else "cpu", "cpu"])
+
+    # NEW: verbosity toggle (default OFF)
+    verbose_logs = st.checkbox("Show load logs (verbose)", value=False,
+                               help="When off, only errors are shown during loading.")
 
     st.markdown("---")
     st.markdown("#### 🎯 Decoding")
@@ -387,38 +393,18 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("#### 🔧 Actions")
-    # --- Clear Chat (hard reset) ---
-if st.button("🗑️ Clear Chat", use_container_width=True, key="clear_chat"):
-    # remove keys instead of just assigning [] so they’re re-initialized cleanly
-    for k in ("chat_history", "message_count", "last_pair", "chat_input"):
-        if k in st.session_state:
-            del st.session_state[k]
-    # also clear any pending input reset flags/debounce
-    for k in ("_pending_clear", "is_generating"):
-        if k in st.session_state:
-            del st.session_state[k]
-    st.rerun()
+    if st.button("🗑️ Clear Chat", use_container_width=True):
+        st.session_state.chat_history = []; st.session_state.message_count = 0
+        st.session_state.last_pair = None
+        st.experimental_rerun()
 
-    # --- Export Chat ---
-if "show_download" not in st.session_state:
-    st.session_state.show_download = False
-
-if st.button("💾 Export Chat", use_container_width=True, key="export_chat"):
-    if st.session_state.chat_history:
-        st.session_state.show_download = True
-    else:
-        st.info("No messages to export yet.")
-
-if st.session_state.show_download and st.session_state.chat_history:
-    chat_json = json.dumps(st.session_state.chat_history, ensure_ascii=False, indent=2)
-    st.download_button(
-        label="⬇️ Download Chat JSON",
-        data=chat_json.encode("utf-8"),
-        file_name="urdu_chat_history.json",
-        mime="application/json",
-        use_container_width=True,
-    )
-
+    if st.button("💾 Export Chat", use_container_width=True):
+        if st.session_state.chat_history:
+            chat_json = json.dumps(st.session_state.chat_history, ensure_ascii=False, indent=2)
+            st.download_button("Download JSON", data=chat_json, file_name="urdu_chat_history.json",
+                               mime="application/json", use_container_width=True)
+        else:
+            st.info("No messages to export yet.")
 
     st.markdown("---")
     st.markdown("#### 📊 Stats")
@@ -438,16 +424,20 @@ st.markdown("""
 # ============================================================
 # LOAD MODEL
 # ============================================================
+# Only the spinner is always shown; details obey 'verbose_logs'
 with st.spinner("🔄 Loading model..."):
     model, sp_proc, error = load_model_and_tokenizer(
         model_source=model_source, model_path=model_path, tokenizer_path=tokenizer_path,
-        device=device, hf_repo_id=hf_repo_id
+        device=device, hf_repo_id=hf_repo_id, verbose=verbose_logs
     )
+
 if error:
     st.error(f"❌ Error: {error}")
-    st.info("Check file paths / HF repo / install `huggingface_hub` if needed.")
+    st.info("Troubleshoot: verify paths/repo IDs, ensure files exist, and `pip install huggingface_hub` if needed.")
     st.stop()
 
+if verbose_logs:
+    st.info(f"Using tokens → PAD:{st.session_state.PAD_ID} • BOS:{st.session_state.BOS_ID} • EOS:{st.session_state.EOS_ID}")
 
 # ============================================================
 # CHAT HISTORY RENDER
