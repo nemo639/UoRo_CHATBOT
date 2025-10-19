@@ -609,21 +609,37 @@ with chat_container:
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ================== INPUT (dedup + single-submit) ==================
+# ================== INPUT (same layout, single-click send) ==================
 st.markdown("### ✍️ پیغام لکھیں | Write Message")
 
-with st.form("chat_form", clear_on_submit=True):
+# init session keys once
+if "user_input" not in st.session_state:
+    st.session_state.user_input = ""
+if "do_send" not in st.session_state:
+    st.session_state.do_send = False
+
+col1, col2 = st.columns([5, 1])
+
+with col1:
     user_input = st.text_area(
         "Your message",
-        key="user_input",
+        key="user_input",                 # <- keep value in session state
         height=100,
         placeholder="یہاں اردو میں ٹائپ کریں...",
         label_visibility="collapsed"
     )
-    submitted = st.form_submit_button("📤 Send", use_container_width=True)
 
-if submitted:
-    text = (user_input or "").strip()
+with col2:
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("📤 Send", key="send_btn", use_container_width=True, type="primary"):
+        # mark intent to send and rerun once; avoids double-input problem
+        st.session_state.do_send = True
+        st.rerun()
+
+# process exactly once after rerun
+if st.session_state.do_send:
+    st.session_state.do_send = False
+    text = (st.session_state.user_input or "").strip()
     if text:
         with st.spinner("🤔 جواب تیار ہو رہا ہے..."):
             try:
@@ -637,15 +653,18 @@ if submitted:
                         max_len=max_length, device=device
                     )
 
-                # Optional: quick dedup guard against accidental double-submit
+                # Optional: dedup guard
                 last = st.session_state.chat_history[-1] if st.session_state.chat_history else None
                 if not last or last[0] != text:
                     st.session_state.chat_history.append((text, response))
                     st.session_state.message_count += 2
 
-                # No st.rerun() needed; form submit already reruns and clear_on_submit=True empties the box.
+                # clear the textarea and show updated chat
+                st.session_state.user_input = ""
+                st.rerun()
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
+
 
 
 # Footer
