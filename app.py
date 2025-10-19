@@ -343,7 +343,7 @@ with st.sidebar:
     st.markdown("### ⚙️ ترتیبات | Settings")
 
     st.markdown("#### 📁 Model Source")
-    model_source = st.radio("Select Source", ["Local Files", "Hugging Face"], help="Choose where to load model from")
+    model_source = st.radio("Select Source", ["Hugging Face"], help="Choose where to load model from")
 
     if model_source == "Hugging Face":
         st.markdown("##### 🤗 Hugging Face Settings")
