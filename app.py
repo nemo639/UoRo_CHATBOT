@@ -115,7 +115,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ============================================================
-# TEXT NORMALIZATION
+# TEXT NORMALIZATION & HELPERS
 # ============================================================
 ZW_RE = re.compile(r"[\u200c\u200d]")
 TAT_RE = re.compile(r"\u0640")
@@ -145,6 +145,16 @@ def normalize_urdu(text: str) -> str:
     for k, v in PUNCT_MAP.items(): s = s.replace(k, v)
     s = s.translate(E2W)
     return re.sub(r"\s+", " ", s).strip()
+
+def strip_special_markers(text: str, markers_csv: str) -> str:
+    """Remove literal BOS/EOS/PAD marker strings if the user types them."""
+    if not text or not markers_csv:
+        return text
+    cleaned = text
+    for m in [m.strip() for m in markers_csv.split(",") if m.strip()]:
+        cleaned = re.sub(re.escape(m), "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
 
 # ============================================================
 # MODEL ARCHITECTURE
@@ -311,6 +321,13 @@ st.session_state.setdefault("is_generating", False)    # debounce
 st.session_state.setdefault("last_pair", None)         # (user, bot)
 st.session_state.setdefault("_pending_clear", False)   # clear textbox on next run
 
+# ---- Special token defaults in state ----
+st.session_state.setdefault("PAD_ID", 0)
+st.session_state.setdefault("BOS_ID", 1)
+st.session_state.setdefault("EOS_ID", 2)
+st.session_state.setdefault("strip_markers", True)
+st.session_state.setdefault("markers_list", "<pad>,<s>,</s>,[PAD],[BOS],[EOS]")
+
 def _append_pair(u, b):
     if st.session_state.last_pair == (u, b):  # de-dupe identical consecutive pair
         return
@@ -344,6 +361,30 @@ with st.sidebar:
     decode_strategy = st.radio("Strategy", ["Greedy", "Beam Search"])
     beam_width = st.slider("Beam Width", 2, 10, 4) if decode_strategy == "Beam Search" else 1
     max_length = st.slider("Max Length", 32, 128, 64, 8)
+
+    st.markdown("---")
+    st.markdown("#### 🔣 Special Tokens")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.session_state.PAD_ID = st.number_input("PAD id", min_value=0, max_value=65535,
+                                                  value=int(st.session_state.PAD_ID), step=1)
+    with c2:
+        st.session_state.BOS_ID = st.number_input("BOS id", min_value=0, max_value=65535,
+                                                  value=int(st.session_state.BOS_ID), step=1)
+    with c3:
+        st.session_state.EOS_ID = st.number_input("EOS id", min_value=0, max_value=65535,
+                                                  value=int(st.session_state.EOS_ID), step=1)
+
+    st.session_state.strip_markers = st.checkbox(
+        "Strip typed markers from input", value=bool(st.session_state.strip_markers),
+        help="Removes strings like <s>, </s>, [BOS], [EOS], <pad> from the user text before encoding."
+    )
+    if st.session_state.strip_markers:
+        st.session_state.markers_list = st.text_input(
+            "Markers to strip (comma-separated)",
+            value=str(st.session_state.markers_list),
+            help="These literals will be removed from the input text before encoding."
+        )
 
     st.markdown("---")
     st.markdown("#### 🔧 Actions")
@@ -388,6 +429,8 @@ if error:
     st.info("Check file paths / HF repo / install `huggingface_hub` if needed.")
     st.stop()
 
+st.info(f"Using tokens → PAD:{st.session_state.PAD_ID} • BOS:{st.session_state.BOS_ID} • EOS:{st.session_state.EOS_ID}")
+
 # ============================================================
 # CHAT HISTORY RENDER
 # ============================================================
@@ -417,7 +460,7 @@ with st.container():
 # ============================================================
 # INPUT (YOUR ORIGINAL LAYOUT: textarea + Send button)
 # ============================================================
-# Clear the textbox safely at the **start** of the run if flagged
+# Clear the textbox safely at the start of the run if flagged
 if st.session_state.get("_pending_clear"):
     st.session_state["_pending_clear"] = False
     st.session_state["chat_input"] = ""   # safe now (before creating the widget)
@@ -441,15 +484,27 @@ with col2:
 # ---- Submit logic with debounce + de-dupe ----
 if send_button and not st.session_state.is_generating:
     txt = (st.session_state.chat_input or "").strip()
+
+    # optional: strip literal markers the user might type
+    if st.session_state.strip_markers and txt:
+        txt = strip_special_markers(txt, st.session_state.markers_list)
+
     if txt:
         st.session_state.is_generating = True  # debounce
         try:
             with st.spinner("🤔 جواب تیار ہو رہا ہے..."):
+                PAD = int(st.session_state.PAD_ID)
+                BOS = int(st.session_state.BOS_ID)
+                EOS = int(st.session_state.EOS_ID)
+
                 if decode_strategy == "Greedy":
-                    resp = greedy_decode(model, sp_proc, txt, max_len=max_length, device=device)
+                    resp = greedy_decode(model, sp_proc, txt,
+                                         max_len=max_length, device=device,
+                                         PAD=PAD, BOS=BOS, EOS=EOS)
                 else:
-                    resp = beam_search_decode(model, sp_proc, txt, beam_width=beam_width,
-                                              max_len=max_length, device=device)
+                    resp = beam_search_decode(model, sp_proc, txt,
+                                              beam_width=beam_width, max_len=max_length, device=device,
+                                              PAD=PAD, BOS=BOS, EOS=EOS)
             _append_pair(txt, resp)
             st.session_state.message_count += 2
         except Exception as e:
