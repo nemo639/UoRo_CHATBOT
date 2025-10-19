@@ -33,7 +33,7 @@ st.set_page_config(
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap');
-    
+
     .rtl {
         direction: rtl;
         text-align: right;
@@ -41,7 +41,7 @@ st.markdown("""
         line-height: 2.0;
         unicode-bidi: plaintext;
     }
-    
+
     .user-message {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -53,7 +53,7 @@ st.markdown("""
         clear: both;
         box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
     }
-    
+
     .bot-message {
         background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
         color: white;
@@ -65,19 +65,19 @@ st.markdown("""
         clear: both;
         box-shadow: 0 2px 8px rgba(245, 87, 108, 0.3);
     }
-    
+
     .message-label {
         font-size: 11px;
         opacity: 0.8;
         margin-bottom: 5px;
         font-weight: bold;
     }
-    
+
     .message-text {
         font-size: 16px;
         line-height: 1.8;
     }
-    
+
     .chat-container {
         background: #f8f9fa;
         padding: 20px;
@@ -87,25 +87,12 @@ st.markdown("""
         overflow-y: auto;
         margin-bottom: 20px;
     }
-    
-    .chat-container::-webkit-scrollbar {
-        width: 8px;
-    }
-    
-    .chat-container::-webkit-scrollbar-track {
-        background: #f1f1f1;
-        border-radius: 10px;
-    }
-    
-    .chat-container::-webkit-scrollbar-thumb {
-        background: #888;
-        border-radius: 10px;
-    }
-    
-    .chat-container::-webkit-scrollbar-thumb:hover {
-        background: #555;
-    }
-    
+
+    .chat-container::-webkit-scrollbar { width: 8px; }
+    .chat-container::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+    .chat-container::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+    .chat-container::-webkit-scrollbar-thumb:hover { background: #555; }
+
     .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -114,19 +101,18 @@ st.markdown("""
         text-align: center;
         margin-bottom: 20px;
     }
-    
+
     .stButton>button {
         width: 100%;
         border-radius: 8px;
         font-weight: bold;
         transition: all 0.3s ease;
     }
-    
     .stButton>button:hover {
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
-    
+
     .stTextArea textarea {
         font-family: 'Noto Nastaliq Urdu', serif;
         direction: rtl;
@@ -164,21 +150,16 @@ def normalize_urdu(text: str) -> str:
     """Normalize Urdu text for consistent processing"""
     if not isinstance(text, str):
         return ""
-    
     s = unicodedata.normalize("NFKC", text)
     s = ZW_RE.sub("", s)
     s = TAT_RE.sub("", s)
     s = DIAC_RE.sub("", s)
-    
     for src, dst in LETTER_MAP.items():
         s = s.replace(src, dst)
-    
     for k, v in PUNCT_MAP.items():
         s = s.replace(k, v)
-    
     s = s.translate(E2W)
     s = re.sub(r"\s+", " ", s).strip()
-    
     return s
 
 # ============================================================
@@ -198,17 +179,15 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         return x + self.pe[:, :x.size(1), :]
 
-
 class Seq2SeqTransformer(nn.Module):
     """Transformer Encoder-Decoder for Urdu Chatbot"""
-    def __init__(self, vocab, d_model=512, nhead=8, enc_layers=4, 
+    def __init__(self, vocab, d_model=512, nhead=8, enc_layers=4,
                  dec_layers=4, ff=2048, drop=0.1):
         super().__init__()
-        
         self.tok_emb = nn.Embedding(vocab, d_model, padding_idx=0)
         self.pos_enc = PositionalEncoding(d_model)
         self.pos_dec = PositionalEncoding(d_model)
-        
+
         self.tf = nn.Transformer(
             d_model=d_model,
             nhead=nhead,
@@ -218,9 +197,7 @@ class Seq2SeqTransformer(nn.Module):
             dropout=drop,
             batch_first=True
         )
-        
         self.fc_out = nn.Linear(d_model, vocab)
-        
         self.config = {
             'vocab_size': vocab,
             'd_model': d_model,
@@ -234,7 +211,6 @@ class Seq2SeqTransformer(nn.Module):
     def forward(self, src_ids, tgt_in_ids, src_kpm, tgt_kpm, tgt_causal):
         src = self.pos_enc(self.tok_emb(src_ids))
         tgt = self.pos_dec(self.tok_emb(tgt_in_ids))
-        
         out = self.tf(
             src, tgt,
             src_key_padding_mask=src_kpm,
@@ -242,7 +218,6 @@ class Seq2SeqTransformer(nn.Module):
             memory_key_padding_mask=src_kpm,
             tgt_mask=tgt_causal
         )
-        
         return self.fc_out(out)
 
 # ============================================================
@@ -253,19 +228,15 @@ def download_from_huggingface(repo_id, filename, cache_dir="./models"):
     """Download model from Hugging Face Hub"""
     try:
         from huggingface_hub import hf_hub_download
-        
         st.info(f"📥 Downloading {filename} from Hugging Face...")
-        
         file_path = hf_hub_download(
             repo_id=repo_id,
             filename=filename,
             cache_dir=cache_dir,
             force_download=False
         )
-        
         st.success(f"✅ Downloaded: {filename}")
         return file_path
-        
     except ImportError:
         st.error("❌ huggingface_hub not installed. Install with: pip install huggingface_hub")
         return None
@@ -277,108 +248,82 @@ def download_from_huggingface(repo_id, filename, cache_dir="./models"):
 # DECODING FUNCTIONS
 # ============================================================
 @torch.no_grad()
-def greedy_decode(model, sp, text, max_len=64, device='cpu', 
-                  PAD=0, BOS=1, EOS=2):
+def greedy_decode(model, sp, text, max_len=64, device='cpu', PAD=0, BOS=1, EOS=2):
     """Greedy decoding for fast inference"""
     model.eval()
-    
     src_tokens = sp.encode(normalize_urdu(text), out_type=int)
     if len(src_tokens) > 94:
         src_tokens = src_tokens[:94]
-    
-    src_ids = torch.tensor([[BOS] + src_tokens + [EOS]], 
-                          dtype=torch.long, device=device)
+    src_ids = torch.tensor([[BOS] + src_tokens + [EOS]], dtype=torch.long, device=device)
     src_kpm = (src_ids == PAD)
-    
     ys = torch.tensor([[BOS]], dtype=torch.long, device=device)
-    
+
     for _ in range(max_len):
         T = ys.size(1)
-        causal = torch.triu(torch.ones(T, T, dtype=torch.bool, 
-                                      device=device), diagonal=1)
+        causal = torch.triu(torch.ones(T, T, dtype=torch.bool, device=device), diagonal=1)
         logits = model(src_ids, ys, src_kpm, (ys == PAD), causal)
         next_id = logits[:, -1, :].argmax(-1)
         ys = torch.cat([ys, next_id.unsqueeze(1)], dim=1)
-        
         if next_id.item() == EOS:
             break
-    
+
     out = ys[0, 1:]
     if (out == EOS).any():
         eos_idx = (out == EOS).nonzero(as_tuple=True)[0][0]
         out = out[:eos_idx]
-    
     return sp.decode(out.tolist())
 
-
 @torch.no_grad()
-def beam_search_decode(model, sp, text, beam_width=4, max_len=64, 
+def beam_search_decode(model, sp, text, beam_width=4, max_len=64,
                        device='cpu', PAD=0, BOS=1, EOS=2):
     """Beam search decoding for better quality"""
     model.eval()
-    
     src_tokens = sp.encode(normalize_urdu(text), out_type=int)
     if len(src_tokens) > 94:
         src_tokens = src_tokens[:94]
-    
-    src_ids = torch.tensor([[BOS] + src_tokens + [EOS]], 
-                          dtype=torch.long, device=device)
+    src_ids = torch.tensor([[BOS] + src_tokens + [EOS]], dtype=torch.long, device=device)
     src_kpm = (src_ids == PAD)
-    
+
     beams = [(0.0, torch.tensor([[BOS]], device=device))]
     completed_beams = []
-    
-    for step in range(max_len):
+
+    for _ in range(max_len):
         candidates = []
-        
         for score, seq in beams:
             if seq[0, -1].item() == EOS:
-                completed_beams.append((score / len(seq[0]), seq))
+                completed_beams.append((score / max(1, len(seq[0])), seq))
                 continue
-            
             T = seq.size(1)
-            causal = torch.triu(torch.ones(T, T, dtype=torch.bool, 
-                                          device=device), diagonal=1)
+            causal = torch.triu(torch.ones(T, T, dtype=torch.bool, device=device), diagonal=1)
             logits = model(src_ids, seq, src_kpm, (seq == PAD), causal)
             log_probs = F.log_softmax(logits[:, -1, :], dim=-1)
-            
             topk_probs, topk_ids = torch.topk(log_probs, beam_width)
-            
             for prob, token_id in zip(topk_probs[0], topk_ids[0]):
-                new_seq = torch.cat([seq, token_id.unsqueeze(0).unsqueeze(0)], 
-                                   dim=1)
+                new_seq = torch.cat([seq, token_id.unsqueeze(0).unsqueeze(0)], dim=1)
                 new_score = score + prob.item()
                 candidates.append((new_score, new_seq))
-        
-        beams = sorted(candidates, key=lambda x: x[0], 
-                      reverse=True)[:beam_width]
-        
-        if len(beams) == 0:
+        if not candidates:
             break
-    
+        beams = sorted(candidates, key=lambda x: x[0], reverse=True)[:beam_width]
+
     for score, seq in beams:
-        completed_beams.append((score / len(seq[0]), seq))
-    
+        completed_beams.append((score / max(1, len(seq[0])), seq))
     if not completed_beams:
         return ""
-    
     best_seq = max(completed_beams, key=lambda x: x[0])[1][0, 1:]
-    
     if (best_seq == EOS).any():
         eos_idx = (best_seq == EOS).nonzero(as_tuple=True)[0][0]
         best_seq = best_seq[:eos_idx]
-    
     return sp.decode(best_seq.tolist())
 
 # ============================================================
 # LOAD MODEL AND TOKENIZER
 # ============================================================
 @st.cache_resource
-def load_model_and_tokenizer(model_source, model_path, tokenizer_path, 
-                            device, hf_repo_id=None):
+def load_model_and_tokenizer(model_source, model_path, tokenizer_path, device, hf_repo_id=None):
     """Load model and tokenizer with multiple source options"""
     try:
-        # Handle Hugging Face download
+        # Handle Hugging Face source
         if model_source == "Hugging Face" and hf_repo_id:
             model_path = download_from_huggingface(
                 repo_id=hf_repo_id,
@@ -388,32 +333,35 @@ def load_model_and_tokenizer(model_source, model_path, tokenizer_path,
                 repo_id=hf_repo_id,
                 filename=tokenizer_path
             )
-            
             if not model_path or not tokenizer_path:
                 raise FileNotFoundError("Failed to download from Hugging Face")
-        
+
         # Verify files exist
         model_file = Path(model_path)
         tokenizer_file = Path(tokenizer_path)
-        
         if not model_file.exists():
             raise FileNotFoundError(f"Model file not found: {model_path}")
         if not tokenizer_file.exists():
             raise FileNotFoundError(f"Tokenizer file not found: {tokenizer_path}")
-        
+
         # Load tokenizer
-        sp = spm.SentencePieceProcessor()
-        sp.load(str(tokenizer_file))
-        vocab_size = sp.get_piece_size()
+        sp_proc = spm.SentencePieceProcessor()
+        sp_proc.load(str(tokenizer_file))
+        vocab_size = sp_proc.get_piece_size()
         st.success(f"✅ Tokenizer loaded (vocab: {vocab_size})")
-        
+
         # Load model checkpoint
         checkpoint = torch.load(str(model_file), map_location=device, weights_only=False)
-        
+
         # Get configuration
         if 'config' in checkpoint:
             config = checkpoint['config']
-            st.info(f"📋 Config: d_model={config.get('d_model')}, nhead={config.get('nhead')}, layers={config.get('enc_layers')}")
+            st.info(
+                f"📋 Config: d_model={config.get('d_model')}, "
+                f"nhead={config.get('nhead')}, "
+                f"enc_layers={config.get('enc_layers')}, "
+                f"dec_layers={config.get('dec_layers')}"
+            )
         else:
             config = {
                 'd_model': 512,
@@ -423,8 +371,8 @@ def load_model_and_tokenizer(model_source, model_path, tokenizer_path,
                 'ff': 2048,
                 'dropout': 0.1
             }
-            st.warning("⚠️ Using default config (adjust if needed)")
-        
+            st.warning("⚠️ Using default config (no config found in checkpoint)")
+
         # Create model
         model = Seq2SeqTransformer(
             vocab=checkpoint.get('vocab_size', vocab_size),
@@ -435,15 +383,20 @@ def load_model_and_tokenizer(model_source, model_path, tokenizer_path,
             ff=config.get('ff', 2048),
             drop=config.get('dropout', 0.1)
         )
-        
+
         # Load weights
-        model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        state_key = 'model_state_dict' if 'model_state_dict' in checkpoint else None
+        if state_key is None:
+            # try full state dict
+            model.load_state_dict(checkpoint, strict=False)
+        else:
+            model.load_state_dict(checkpoint[state_key], strict=False)
+
         model.to(device)
         model.eval()
-        
-        st.success(f"✅ Model loaded on {device.upper()}")
-        return model, sp, None
-        
+        st.success(f"✅ Model loaded on {str(device).upper()}")
+        return model, sp_proc, None
+
     except Exception as e:
         return None, None, str(e)
 
@@ -451,6 +404,7 @@ def load_model_and_tokenizer(model_source, model_path, tokenizer_path,
 # SESSION STATE
 # ============================================================
 if 'chat_history' not in st.session_state:
+    # list of tuples: (user_msg, bot_msg)
     st.session_state.chat_history = []
 if 'message_count' not in st.session_state:
     st.session_state.message_count = 0
@@ -460,14 +414,14 @@ if 'message_count' not in st.session_state:
 # ============================================================
 with st.sidebar:
     st.markdown("### ⚙️ ترتیبات | Settings")
-    
+
     st.markdown("#### 📁 Model Source")
     model_source = st.radio(
         "Select Source",
         ["Local Files", "Hugging Face"],
         help="Choose where to load model from"
     )
-    
+
     if model_source == "Hugging Face":
         st.markdown("##### 🤗 Hugging Face Settings")
         hf_repo_id = st.text_input(
@@ -475,57 +429,54 @@ with st.sidebar:
             value="naeaeaem/urdu-chatbot",
             help="Format: username/repo-name"
         )
-        
+
         st.info("""
-        **Setup Instructions:**
-        1. Create HF account.
-        2. Create new model repository
-        3. Upload your files:
-           ```bash
-           
-           ```
+**Setup Instructions:**
+1) Create a HF model repo.
+2) Upload your checkpoint and tokenizer:
+   - `best_bleu_urdu_chatbot.pt`
+   - `urdu.model`
+3) Ensure filenames match exactly.
         """)
-        
-        
         model_path = "best_bleu_urdu_chatbot.pt"
         tokenizer_path = "urdu.model"
-        
+
     else:
         hf_repo_id = None
         model_path = st.text_input(
             "Model Path (.pt)",
-            value="naeaeaem/urdu-chatbot"
+            value="best_bleu_urdu_chatbot.pt",
+            help="Local path to .pt"
         )
         tokenizer_path = st.text_input(
             "Tokenizer Path (.model)",
-            value="naeaeaem/urdu-chatbot"
+            value="urdu.model",
+            help="Local path to SentencePiece .model"
         )
-    
+
     device = st.selectbox(
         "Device",
         ["cuda" if torch.cuda.is_available() else "cpu", "cpu"]
     )
-    
+
     st.markdown("---")
-    
+
     st.markdown("#### 🎯 Decoding")
     decode_strategy = st.radio("Strategy", ["Greedy", "Beam Search"])
-    
     if decode_strategy == "Beam Search":
         beam_width = st.slider("Beam Width", 2, 10, 4)
     else:
         beam_width = 1
-    
     max_length = st.slider("Max Length", 32, 128, 64, 8)
-    
+
     st.markdown("---")
-    
+
     st.markdown("#### 🔧 Actions")
     if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.chat_history = []
         st.session_state.message_count = 0
         st.rerun()
-    
+
     if st.button("💾 Export Chat", use_container_width=True):
         if st.session_state.chat_history:
             chat_json = json.dumps(
@@ -540,11 +491,13 @@ with st.sidebar:
                 mime="application/json",
                 use_container_width=True
             )
-    
+        else:
+            st.info("No messages to export yet.")
+
     st.markdown("---")
     st.markdown("#### 📊 Stats")
     st.metric("Messages", st.session_state.message_count)
-    st.metric("Conversations", len(st.session_state.chat_history))
+    st.metric("Conversations", 1 if st.session_state.chat_history else 0)
 
 # ============================================================
 # MAIN INTERFACE
@@ -560,7 +513,7 @@ st.markdown("""
 
 # Load model
 with st.spinner("🔄 Loading model..."):
-    model, sp, error = load_model_and_tokenizer(
+    model, sp_proc, error = load_model_and_tokenizer(
         model_source=model_source,
         model_path=model_path,
         tokenizer_path=tokenizer_path,
@@ -571,22 +524,19 @@ with st.spinner("🔄 Loading model..."):
 if error:
     st.error(f"❌ Error: {error}")
     st.info("""
-    **Troubleshooting:**
-    - Verify file paths are correct
-    - Check Hugging Face repo ID format
-    - Ensure files are uploaded to HF
-    - Install: `pip install huggingface_hub`
-    """)
+**Troubleshooting:**
+- Verify file paths are correct
+- Check Hugging Face repo ID format
+- Ensure files are uploaded to HF
+- Install: `pip install huggingface_hub`
+""")
     st.stop()
 
-# Chat interface
+# Chat history render
 st.markdown("### 💭 گفتگو | Conversation")
-
 chat_container = st.container()
-
 with chat_container:
     st.markdown('<div class="chat-container">', unsafe_allow_html=True)
-    
     if not st.session_state.chat_history:
         st.info("👋 سلام! آپ کی مدد کے لیے حاضر ہوں۔ کچھ پوچھیں!")
     else:
@@ -598,7 +548,7 @@ with chat_container:
             </div>
             <div style="clear:both;"></div>
             """, unsafe_allow_html=True)
-            
+
             st.markdown(f"""
             <div class="bot-message rtl">
                 <div class="message-label">بوٹ:</div>
@@ -606,60 +556,44 @@ with chat_container:
             </div>
             <div style="clear:both;"></div>
             """, unsafe_allow_html=True)
-    
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ================== INPUT (same layout, single-click send) ==================
+# ============================================================
+# INPUT (uses form to avoid duplicate submissions)
+# ============================================================
 st.markdown("### ✍️ پیغام لکھیں | Write Message")
 
-# init once
-if "user_input" not in st.session_state:
-    st.session_state.user_input = ""
-if "last_sent" not in st.session_state:
-    st.session_state.last_sent = None
-
-col1, col2 = st.columns([5, 1])
-
-with col1:
-    st.text_area(
+with st.form("chat_form", clear_on_submit=True):
+    user_input = st.text_area(
         "Your message",
-        key="user_input",                 # keep value in session state
         height=100,
         placeholder="یہاں اردو میں ٹائپ کریں...",
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key="chat_input",
     )
+    submitted = st.form_submit_button("📤 Send", use_container_width=True)
 
-with col2:
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("📤 Send", key="send_btn", use_container_width=True, type="primary"):
-        text = (st.session_state.user_input or "").strip()
-
-        # Optional dedup: ignore if identical to last message
-        if text and (st.session_state.last_sent != text):
-            with st.spinner("🤔 جواب تیار ہو رہا ہے..."):
-                try:
-                    if decode_strategy == "Greedy":
-                        response = greedy_decode(
-                            model, sp, text, max_len=max_length, device=device
-                        )
-                    else:
-                        response = beam_search_decode(
-                            model, sp, text, beam_width=beam_width,
-                            max_len=max_length, device=device
-                        )
-
-                    st.session_state.chat_history.append((text, response))
-                    st.session_state.message_count += 2
-                    st.session_state.last_sent = text
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
-
-        # clear BEFORE rerun so the value isn’t re-sent
-        st.session_state.user_input = ""
-        st.rerun()
-
-
-
+if submitted and user_input and user_input.strip():
+    with st.spinner("🤔 جواب تیار ہو رہا ہے..."):
+        try:
+            if decode_strategy == "Greedy":
+                response = greedy_decode(
+                    model, sp_proc, user_input,
+                    max_len=max_length, device=device
+                )
+            else:
+                response = beam_search_decode(
+                    model, sp_proc, user_input,
+                    beam_width=beam_width,
+                    max_len=max_length,
+                    device=device
+                )
+            st.session_state.chat_history.append((user_input, response))
+            st.session_state.message_count += 2
+            # No need to manually clear input; the form already clears it.
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
 
 # Footer
 st.markdown("---")
