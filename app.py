@@ -17,10 +17,48 @@ from typing import List, Tuple
 import unicodedata
 import subprocess
 import os
+import requests
+from tqdm import tqdm
 
 # ============================================================
 # GIT LFS FILE HANDLER
 # ============================================================
+# ============================================================
+# DOWNLOAD HELPERS
+# ============================================================
+def download_from_url(url, local_path, description="File"):
+    """Download file from URL with progress bar"""
+    try:
+        os.makedirs(os.path.dirname(local_path) if os.path.dirname(local_path) else ".", exist_ok=True)
+        
+        st.info(f"⬇️ Downloading {description} from URL...")
+        
+        response = requests.get(url, stream=True, timeout=60)
+        response.raise_for_status()
+        
+        total_size = int(response.headers.get('content-length', 0))
+        
+        with open(local_path, 'wb') as f:
+            if total_size == 0:
+                f.write(response.content)
+            else:
+                downloaded = 0
+                progress_bar = st.progress(0)
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        progress_bar.progress(min(downloaded / total_size, 1.0))
+                progress_bar.empty()
+        
+        st.success(f"✅ Downloaded {description} successfully!")
+        return True
+        
+    except Exception as e:
+        st.error(f"❌ Download failed: {str(e)}")
+        return False
+
+
 def ensure_lfs_files():
     """
     Automatically download Git LFS files if they are pointer files
@@ -30,56 +68,72 @@ def ensure_lfs_files():
         'spm/urdu.model': 'Tokenizer file'
     }
     
+    # First, try to pull all LFS files if any are missing
+    missing_files = [f for f in lfs_files.keys() if not os.path.exists(f)]
+    
+    if missing_files:
+        st.warning(f"⚠️ Missing files detected: {', '.join(missing_files)}")
+        st.info("🔄 Attempting to download LFS files...")
+        
+        try:
+            result = subprocess.run(
+                ['git', 'lfs', 'pull'],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=os.path.dirname(os.path.abspath(__file__))
+            )
+            
+            if result.returncode == 0:
+                st.success("✅ Git LFS pull completed!")
+            else:
+                st.warning(f"Git LFS output: {result.stderr}")
+        except FileNotFoundError:
+            st.error("❌ Git LFS not installed!")
+            st.info("💡 Attempting direct download from GitHub...")
+        except Exception as e:
+            st.error(f"❌ Error running git lfs pull: {str(e)}")
+            st.info("💡 Attempting direct download from GitHub...")
+    
+    # Now check each file
     for filepath, description in lfs_files.items():
         if os.path.exists(filepath):
             file_size = os.path.getsize(filepath)
             
             # Check if it's a Git LFS pointer file (< 1KB = likely pointer)
             if file_size < 1024:
-                st.warning(f"⬇️ Detected LFS pointer for {description}. Downloading actual file...")
+                st.warning(f"⬇️ {description} is an LFS pointer ({file_size} bytes)")
+                
+                # Read first line to confirm it's a pointer
                 try:
-                    # Try to pull the specific file
-                    result = subprocess.run(
-                        ['git', 'lfs', 'pull', '--include', filepath],
-                        capture_output=True,
-                        text=True,
-                        timeout=300  # 5 minute timeout
-                    )
-                    
-                    if result.returncode == 0:
-                        st.success(f"✅ Downloaded {description}: {filepath}")
-                    else:
-                        st.error(f"❌ Failed to download {filepath}: {result.stderr}")
-                        st.info("Trying alternative method...")
-                        
-                        # Alternative: Pull all LFS files
-                        subprocess.run(['git', 'lfs', 'pull'], timeout=300)
-                        
-                except subprocess.TimeoutExpired:
-                    st.error(f"⏱️ Timeout downloading {filepath}")
-                except FileNotFoundError:
-                    st.error("❌ Git LFS not installed!")
-                    st.info("""
-                    **Please install Git LFS:**
-                    - Ubuntu/Debian: `sudo apt-get install git-lfs`
-                    - macOS: `brew install git-lfs`
-                    - Windows: Download from https://git-lfs.github.com/
-                    
-                    Then run: `git lfs install && git lfs pull`
-                    """)
-                except Exception as e:
-                    st.error(f"❌ Error downloading {filepath}: {str(e)}")
-            else:
-                st.info(f"✅ {description} already downloaded ({file_size / (1024*1024):.2f} MB)")
-        else:
-            st.error(f"❌ File not found: {filepath}")
-            st.info("Make sure you've cloned the repository with: `git clone <repo-url>`")
+                    with open(filepath, 'r') as f:
+                        first_line = f.readline()
+                        if 'version https://git-lfs.github.com' in first_line:
+                            st.error(f"❌ {filepath} is still an LFS pointer file!")
+                            st.info("""
+**Manual fix required:**
+```bash
+git lfs install
+git lfs pull
+```
 
-# Call this at the start
-ensure_lfs_files()
+Or provide a direct download URL in the sidebar.
+                            """)
+                except:
+                    pass
+            else:
+                st.success(f"✅ {description} ready ({file_size / (1024*1024):.2f} MB)")
+        else:
+            st.error(f"❌ {description} not found: {filepath}")
+            st.info(f"""
+**Options to fix:**
+1. Run: `git lfs pull` in your terminal
+2. Provide a direct download URL in the sidebar
+3. Upload the file manually to: {os.path.abspath(filepath)}
+            """)
 
 # ============================================================
-# PAGE CONFIGURATION
+# PAGE CONFIGURATION (MUST BE FIRST!)
 # ============================================================
 st.set_page_config(
     page_title="اردو چیٹ بوٹ | Urdu Chatbot",
@@ -87,6 +141,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Call LFS checker AFTER set_page_config
+ensure_lfs_files()
 
 # ============================================================
 # CUSTOM CSS FOR RTL AND STYLING
@@ -518,8 +575,37 @@ with st.sidebar:
         help="Path to your SentencePiece tokenizer"
     )
     
+    # Direct download option
+    with st.expander("🌐 Download from URL"):
+        st.caption("If LFS isn't working, provide direct download URLs:")
+        
+        model_url = st.text_input(
+            "Model URL",
+            placeholder="https://github.com/.../best_bleu_urdu_chatbot.pt",
+            help="Direct download link (e.g., from GitHub releases or Google Drive)"
+        )
+        
+        if st.button("⬇️ Download Model", use_container_width=True):
+            if model_url:
+                download_from_url(model_url, model_path, "Model")
+                st.rerun()
+            else:
+                st.warning("Please provide a URL")
+        
+        tokenizer_url = st.text_input(
+            "Tokenizer URL",
+            placeholder="https://github.com/.../urdu.model",
+        )
+        
+        if st.button("⬇️ Download Tokenizer", use_container_width=True):
+            if tokenizer_url:
+                download_from_url(tokenizer_url, tokenizer_path, "Tokenizer")
+                st.rerun()
+            else:
+                st.warning("Please provide a URL")
+    
     # Manual LFS pull button
-    if st.button("🔄 Force Download LFS Files", use_container_width=True):
+    if st.button("🔄 Force Git LFS Pull", use_container_width=True):
         with st.spinner("Downloading LFS files..."):
             try:
                 result = subprocess.run(['git', 'lfs', 'pull'], 
