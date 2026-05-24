@@ -1,15 +1,15 @@
-# Urdu Conversational Chatbot with Transformer Multi-Head Attention
+# Neural Machine Translation — Urdu to Roman Urdu
 
 <div align="center">
 
 ![Python](https://img.shields.io/badge/Python-3.10-blue?style=flat-square&logo=python)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?style=flat-square&logo=pytorch)
-![Transformer](https://img.shields.io/badge/Transformer-From%20Scratch-green?style=flat-square)
-![Streamlit](https://img.shields.io/badge/Streamlit-Demo-FF4B4B?style=flat-square&logo=streamlit)
-![Language](https://img.shields.io/badge/Language-Urdu%20%D8%A7%D8%B1%D8%AF%D9%88-blue?style=flat-square)
+![BiLSTM](https://img.shields.io/badge/BiLSTM-Encoder--Decoder-green?style=flat-square)
+![Streamlit](https://img.shields.io/badge/Streamlit-Live%20Demo-FF4B4B?style=flat-square&logo=streamlit)
+![Language](https://img.shields.io/badge/Language-Urdu%20%E2%86%92%20Roman%20Urdu-blue?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey?style=flat-square)
 
-**A custom Transformer encoder-decoder chatbot built from scratch for Urdu conversational AI**
+**A seq2seq BiLSTM encoder-decoder model for transliterating Urdu script into Roman Urdu**
 
 [📝 Medium Blog](#) · [💼 LinkedIn Post](#) · [🤗 Live Demo](#)
 
@@ -19,52 +19,50 @@
 
 ## 📌 Overview
 
-This project implements a fully custom **Transformer encoder-decoder architecture from scratch** (no pre-trained models) for building a conversational chatbot in Urdu. The model uses multi-head attention to capture contextual relationships in Urdu text and generates fluent, context-aware responses.
+This project builds a **sequence-to-sequence Neural Machine Translation (NMT)** system using a **Bidirectional LSTM encoder** and an **LSTM decoder** to transliterate Urdu script (اردو) into Roman Urdu. The model is trained on the `urdu_ghazals_rekhta` dataset — poetic Urdu Ghazals — pushing BiLSTM-based NMT on low-resource, morphologically rich text.
 
 ```
-Urdu Input  →  Encoder (Multi-Head Attention)  →  Context Representation
-                                                          ↓
-                                              Decoder (Masked MHA + Cross-Attention)
-                                                          ↓
-                                               Generated Urdu Response
+Urdu Script Input  →  BiLSTM Encoder  →  Context Vector
+      اردو                                      ↓
+                                        LSTM Decoder
+                                               ↓
+                                     Roman Urdu Output
+                                          "urdu"
 ```
 
 ---
 
 ## ✨ Features
 
-- ✅ Full Transformer encoder-decoder implemented from scratch in PyTorch
-- ✅ Multi-Head Attention, Positional Encoding, and Feed-Forward layers
-- ✅ Urdu text normalization (diacritics removal, Alef/Yeh standardization)
-- ✅ Teacher forcing during training
-- ✅ Greedy and Beam search decoding strategies
-- ✅ BLEU, ROUGE-L, chrF, and Perplexity evaluation
-- ✅ Human evaluation — Fluency, Relevance, Adequacy (1–5 scale)
-- ✅ Streamlit / Gradio interface with right-to-left Urdu rendering
-- ✅ Deployed on Streamlit Cloud / Gradio public link
+- ✅ Seq2seq BiLSTM encoder (2 layers) + LSTM decoder (4 layers) in PyTorch
+- ✅ Urdu text normalization and subword tokenization (BPE / WordPiece)
+- ✅ Roman Urdu target extraction / rule-based conversion from dataset
+- ✅ Minimum 3 controlled experiments with varying hyperparameters
+- ✅ BLEU, Perplexity, CER, and Levenshtein distance evaluation
+- ✅ Qualitative translation examples vs ground truth
+- ✅ Streamlit live demo for real-time transliteration
 
 ---
 
 ## 🗂️ Repository Structure
 
 ```
-📦 urdu-transformer-chatbot/
+📦 urdu-to-roman-nmt/
 ├── 📁 data/
-│   └── preprocess.py              # Urdu normalization, tokenization, vocab
+│   ├── preprocess.py              # Urdu normalization, Roman Urdu extraction
+│   └── tokenizer.py               # BPE / WordPiece tokenization
 ├── 📁 model/
-│   ├── attention.py               # Multi-Head Attention
-│   ├── positional_encoding.py     # Sinusoidal positional encoding
-│   ├── encoder.py                 # Transformer encoder stack
-│   ├── decoder.py                 # Transformer decoder stack
-│   └── transformer.py             # Full encoder-decoder model
+│   ├── encoder.py                 # BiLSTM encoder (2 layers)
+│   ├── decoder.py                 # LSTM decoder (4 layers)
+│   └── seq2seq.py                 # Full seq2seq model
 ├── 📁 training/
-│   ├── train.py                   # Training loop with teacher forcing
-│   └── evaluate.py                # BLEU, ROUGE-L, chrF, Perplexity
-├── 📁 inference/
-│   └── generate.py                # Greedy & Beam search decoding
+│   ├── train.py                   # Training loop
+│   └── experiments.py             # 3 controlled hyperparameter experiments
+├── 📁 evaluation/
+│   └── metrics.py                 # BLEU, Perplexity, CER, Levenshtein
 ├── 📁 app/
-│   └── app.py                     # Streamlit / Gradio chatbot UI
-├── 📓 urdu_chatbot.ipynb          # Full pipeline notebook
+│   └── app.py                     # Streamlit transliteration demo
+├── 📓 urdu_roman_nmt.ipynb        # Full pipeline notebook
 ├── 📄 requirements.txt
 └── 📄 README.md
 ```
@@ -73,64 +71,74 @@ Urdu Input  →  Encoder (Multi-Head Attention)  →  Context Representation
 
 ## 🧠 Model Architecture
 
-The entire Transformer is built from scratch using base PyTorch — no HuggingFace model weights used.
+### Encoder — Bidirectional LSTM
+- Reads the Urdu input sequence in **both forward and backward directions**
+- 2 BiLSTM layers — captures richer contextual representations than a unidirectional LSTM
+- Produces a context vector by concatenating forward and backward hidden states
 
-### Encoder
-- Embeds the Urdu input tokens
-- Applies sinusoidal positional encoding
-- Passes through N stacked encoder layers, each containing:
-  - Multi-Head Self-Attention
-  - Position-wise Feed-Forward Network
-  - Layer Normalization + Residual Connections
+### Decoder — LSTM
+- 4 LSTM layers — deeper decoder for complex transliteration patterns
+- Takes the encoder context vector as its initial hidden state
+- Generates Roman Urdu tokens one at a time
 
-### Decoder
-- Embeds the target tokens
-- Applies positional encoding
-- Passes through N stacked decoder layers, each containing:
-  - Masked Multi-Head Self-Attention (prevents attending to future tokens)
-  - Cross-Attention over encoder output
-  - Feed-Forward Network + Layer Norm + Residuals
-
-### Hyperparameters
-
-| Parameter | Suggested Value |
-|---|---|
-| Embedding Dimensions | 256 / 512 |
-| Attention Heads | 2 |
-| Encoder Layers | 2 |
-| Decoder Layers | 2 |
-| Dropout | 0.1 – 0.3 |
-| Batch Size | 32 / 64 |
-| Learning Rate | 1e-4 – 5e-4 (Adam) |
+### Why BiLSTM for Urdu?
+Urdu is written right-to-left and has rich morphology — a bidirectional encoder captures context from both directions of the script simultaneously, which significantly improves the quality of the context vector for transliteration.
 
 ---
 
 ## 📊 Dataset
 
-**Urdu Conversational Dataset (20,000 samples)**
-- Source: [Kaggle — muhammadahmedansari/urdu-dataset-20000](https://www.kaggle.com/datasets/muhammadahmedansari/urdu-dataset-20000)
-- Content: Urdu question-answer conversational pairs
-- Split: **80% Train / 10% Validation / 10% Test**
+**urdu_ghazals_rekhta**
+- Source: [github.com/amir9ume/urdu_ghazals_rekhta](https://github.com/amir9ume/urdu_ghazals_rekhta)
+- Content: Urdu Ghazals (poetic works) in Urdu script, English transliteration, and Hindi script
+- Extraction: Urdu script (source) → Roman Urdu / English transliteration (target) pairs
+- Note: If Roman Urdu is not directly present, rule-based transliteration conversion is applied
+
+**Dataset Split:**
+
+| Split | Percentage |
+|---|---|
+| Train | 50% |
+| Validation | 25% |
+| Test | 25% |
 
 ---
 
 ## 🔤 Preprocessing Pipeline
 
-Urdu text requires specialised preprocessing before tokenization:
-
-- **Diacritics removal** — strip Harakat (زیر، زبر، پیش) that vary between writers
-- **Alef normalization** — standardize ا، آ، أ، إ to a single form
-- **Yeh normalization** — standardize ی، ے، ئ forms
-- **Tokenization** — whitespace and subword tokenization
-- **Vocabulary building** — build source and target vocab with special tokens (`<PAD>`, `<SOS>`, `<EOS>`, `<UNK>`)
+- **Urdu normalization** — character standardization, extraneous punctuation removal
+- **Roman Urdu extraction** — extract or derive Roman Urdu targets from the dataset
+- **Rule-based conversion** — apply transliteration rules where Roman Urdu is not directly available
+- **Tokenization** — subword tokenization using BPE or WordPiece for both source and target
+- **Vocabulary building** — separate vocabularies for Urdu and Roman Urdu with `<PAD>`, `<SOS>`, `<EOS>`, `<UNK>` tokens
 
 ---
 
-## 🏋️ Training
+## ⚗️ Experiments
 
-- **Teacher forcing** — during training the decoder receives ground truth tokens as input at each step, speeding up convergence
-- **Best model saving** — checkpoint saved based on highest validation BLEU score
-- **Optimizer** — Adam with learning rate scheduling
+At least **3 controlled experiments** are conducted by varying one parameter at a time:
+
+| Experiment | Parameter Varied | Values Tested |
+|---|---|---|
+| Exp 1 | Embedding Dimension | 128, 256, 512 |
+| Exp 2 | Hidden Size | 256, 512 |
+| Exp 3 | Learning Rate | 1e-3, 5e-4, 1e-4 |
+
+All other parameters are held constant per experiment for fair comparison.
+
+### Full Hyperparameter Search Space
+
+| Parameter | Values |
+|---|---|
+| Embedding Dimension | 128, 256, 512 |
+| LSTM Hidden Size | 256, 512 |
+| BiLSTM Encoder Layers | 1, 2, 3, 4 |
+| LSTM Decoder Layers | 2, 3, 4 |
+| Dropout Rate | 0.1, 0.3, 0.5 |
+| Learning Rate | 1e-3, 5e-4, 1e-4 |
+| Batch Size | 32, 64, 128 |
+| Optimizer | Adam |
+| Loss | Cross-Entropy |
 
 ---
 
@@ -140,22 +148,13 @@ Urdu text requires specialised preprocessing before tokenization:
 
 | Metric | What It Measures |
 |---|---|
-| BLEU | N-gram overlap between generated and reference response |
-| ROUGE-L | Longest common subsequence recall |
-| chrF | Character-level F-score — robust for morphologically rich languages like Urdu |
-| Perplexity | How confidently the model predicts the next token (lower = better) |
+| BLEU | N-gram overlap between generated and reference transliteration |
+| Perplexity | Model confidence in predicting next token (lower = better) |
+| CER | Character Error Rate — fraction of characters incorrectly transliterated |
+| Levenshtein Distance | Edit distance between generated and reference string |
 
-### Human Evaluation
-
-Three annotators rated a random sample of responses on a 1–5 scale:
-
-| Dimension | Description |
-|---|---|
-| Fluency | Is the generated Urdu grammatically natural? |
-| Relevance | Does the response address the input? |
-| Adequacy | Does the response convey the correct meaning? |
-
-Qualitative examples comparing model output vs ground truth are included in the notebook.
+### Qualitative Evaluation
+Side-by-side comparison of model output vs ground truth transliterations across multiple test samples.
 
 ---
 
@@ -164,8 +163,8 @@ Qualitative examples comparing model output vs ground truth are included in the 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/yourusername/urdu-transformer-chatbot.git
-cd urdu-transformer-chatbot
+git clone https://github.com/yourusername/urdu-to-roman-nmt.git
+cd urdu-to-roman-nmt
 ```
 
 ### 2. Install dependencies
@@ -174,12 +173,10 @@ cd urdu-transformer-chatbot
 pip install -r requirements.txt
 ```
 
-### 3. Download the dataset
-
-Add the Kaggle dataset to `data/` or run:
+### 3. Clone the dataset
 
 ```bash
-kaggle datasets download -d muhammadahmedansari/urdu-dataset-20000
+git clone https://github.com/amir9ume/urdu_ghazals_rekhta.git data/urdu_ghazals_rekhta
 ```
 
 ### 4. Preprocess and train
@@ -189,7 +186,13 @@ python data/preprocess.py
 python training/train.py
 ```
 
-### 5. Launch the chatbot app
+### 5. Run experiments
+
+```bash
+python training/experiments.py
+```
+
+### 6. Launch the Streamlit app
 
 ```bash
 streamlit run app/app.py
@@ -197,30 +200,35 @@ streamlit run app/app.py
 
 ---
 
-## 🖥️ Chatbot Interface
+## 🖥️ Live Demo
 
-The Streamlit / Gradio app includes:
+The Streamlit app allows real-time transliteration:
 
-- **Urdu input box** with right-to-left text rendering
-- **Generated reply display** in Urdu script
-- **Conversation history** panel
-- **Decoding strategy selector** — Greedy or Beam Search
+- Input Urdu text (اردو script)
+- Get instant Roman Urdu transliteration output
+- Deployed live — no setup needed
 
 ---
 
 ## ✅ Tasks Completed
 
-- [x] Urdu text normalization and preprocessing
-- [x] Vocabulary building with special tokens
-- [x] Transformer encoder-decoder from scratch (PyTorch)
-- [x] Multi-Head Attention, Positional Encoding, Feed-Forward layers
-- [x] Training with teacher forcing
-- [x] Validation with BLEU-based checkpoint saving
-- [x] BLEU, ROUGE-L, chrF, Perplexity evaluation
-- [x] Human evaluation (Fluency, Relevance, Adequacy)
-- [x] Greedy and Beam search decoding
-- [x] Streamlit / Gradio chatbot interface with RTL rendering
-- [x] Deployment on Streamlit Cloud / Gradio public link
+- [x] Urdu text normalization and Roman Urdu extraction
+- [x] Subword tokenization (BPE / WordPiece)
+- [x] BiLSTM encoder (2 layers) + LSTM decoder (4 layers) in PyTorch
+- [x] Training with cross-entropy loss and Adam optimizer
+- [x] 3 controlled hyperparameter experiments
+- [x] BLEU, Perplexity, CER, Levenshtein evaluation
+- [x] Qualitative output vs ground truth comparison
+- [x] Streamlit live demo deployment
+- [x] Medium blog post
+- [x] LinkedIn post
+
+---
+
+## 🏆 Bonus
+
+- [ ] Dataset augmentation via back-transliteration or noise injection
+- [ ] Replace BiLSTM + LSTM with xLSTM architecture
 
 ---
 
@@ -230,8 +238,8 @@ The Streamlit / Gradio app includes:
 |---|---|
 | Medium Blog Post | [Read on Medium](#) |
 | LinkedIn Post | [View on LinkedIn](#) |
-| Live Demo | [Streamlit / Gradio](#) |
-| Dataset | [Kaggle — Urdu Dataset 20000](https://www.kaggle.com/datasets/muhammadahmedansari/urdu-dataset-20000) |
+| Live Demo | [Streamlit App](#) |
+| Dataset | [urdu_ghazals_rekhta](https://github.com/amir9ume/urdu_ghazals_rekhta) |
 
 ---
 
